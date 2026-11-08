@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.1-alpha] - 2026-11-08
+
+### Security
+
+- Build with Go 1.26.10, fixing standard-library vulnerabilities reported by
+  govulncheck in `net/http` (GO-2026-6611, -6612, -6613, -6617) and `crypto/x509`
+  (GO-2026-6809).
+
+### Fixed
+
+- Release configuration: the Homebrew tap token now defaults cleanly when unset.
+
 ## [0.1.0-alpha] - 2026-11-08
 
 First public alpha: the foundation for analysing a repository and drawing it.

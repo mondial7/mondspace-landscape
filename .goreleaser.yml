@@ -2,6 +2,10 @@ version: 2
 
 project_name: mondspace-landscape
 
+# Default the tap token to empty so the brew step can be skipped cleanly.
+env:
+  - HOMEBREW_TAP_TOKEN={{ if index .Env "HOMEBREW_TAP_TOKEN" }}{{ .Env.HOMEBREW_TAP_TOKEN }}{{ end }}
+
 before:
   hooks:
     - go mod tidy
@@ -65,11 +69,11 @@ release:
 # forks still release without touching the tap.
 brews:
   - name: mondspace-landscape
-    skip_upload: '{{ if eq (envOrDefault "HOMEBREW_TAP_TOKEN" "") "" }}true{{ end }}'
+    skip_upload: '{{ if eq .Env.HOMEBREW_TAP_TOKEN "" }}true{{ end }}'
     repository:
       owner: mondial7
       name: homebrew-tap
-      token: '{{ envOrDefault "HOMEBREW_TAP_TOKEN" "" }}'
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     commit_author:
       name: Marco Mondini
       email: mondial95@gmail.com
