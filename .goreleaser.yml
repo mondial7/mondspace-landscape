@@ -1,0 +1,86 @@
+version: 2
+
+project_name: mondspace-landscape
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: landscape
+    main: ./cmd/landscape
+    binary: landscape
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  - id: default
+    name_template: >-
+      {{- .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  disable: true # release notes come from CHANGELOG.md (--release-notes)
+
+release:
+  draft: false
+  prerelease: auto
+  footer: |
+    ---
+    ## Install
+    ```sh
+    brew install mondial7/tap/mondspace-landscape
+    ```
+    or download the archive for your platform, verify it against `checksums.txt`,
+    extract it and put `landscape` on your `PATH`.
+
+# --- Homebrew tap -------------------------------------------------------------
+#     brew install mondial7/tap/mondspace-landscape
+# skip_upload short-circuits when HOMEBREW_TAP_TOKEN is unset, so dry-runs and
+# forks still release without touching the tap.
+brews:
+  - name: mondspace-landscape
+    skip_upload: '{{ if eq (envOrDefault "HOMEBREW_TAP_TOKEN" "") "" }}true{{ end }}'
+    repository:
+      owner: mondial7
+      name: homebrew-tap
+      token: '{{ envOrDefault "HOMEBREW_TAP_TOKEN" "" }}'
+    commit_author:
+      name: Marco Mondini
+      email: mondial95@gmail.com
+    commit_msg_template: "Add {{ .ProjectName }} {{ .Tag }}"
+    homepage: "https://github.com/mondial7/mondspace-landscape"
+    description: Turn any codebase into a zoomable, C4-style architecture map, analyzed locally
+    license: MIT
+    caveats: |
+      Run `landscape` inside a repository (or `landscape <path|github-url>`).
+      For plain-language descriptions, start Ollama or LM Studio; everything stays on your machine.
+    test: |
+      system "#{bin}/landscape", "--version"
+    install: |
+      bin.install "landscape"

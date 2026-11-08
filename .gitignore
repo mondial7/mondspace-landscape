@@ -1,0 +1,5 @@
+/landscape
+/dist/
+coverage.out
+.DS_Store
+*.test

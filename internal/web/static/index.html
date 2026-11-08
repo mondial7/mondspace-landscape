@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mondspace Landscape</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='12' height='12' rx='3' fill='%233b6fd8'/%3E%3Crect x='18' y='2' width='12' height='12' rx='3' fill='%2370a0f5'/%3E%3Crect x='10' y='18' width='12' height='12' rx='3' fill='%23e8933a'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand" title="mondspace landscape">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">landscape</span>
+    </div>
+    <form id="analyze-form" class="analyze" autocomplete="off">
+      <input id="source" name="source" type="text" spellcheck="false"
+             placeholder="Paste a public GitHub repo (github.com/owner/repo) or a local path"
+             aria-label="Repository to analyze">
+      <button type="submit" id="analyze-btn">Analyze</button>
+    </form>
+    <select id="history" aria-label="Previous analyses"><option value="">Recent…</option></select>
+    <span id="llm" class="pill" title="Local model used for descriptions">AI: …</span>
+  </header>
+
+  <nav class="toolbar" aria-label="Diagram navigation">
+    <button id="up" class="icon" title="Zoom out a level (Backspace)" aria-label="Zoom out a level">↑</button>
+    <ol id="crumbs" class="crumbs"></ol>
+    <span id="level" class="level"></span>
+    <span class="spacer"></span>
+    <div class="search">
+      <input id="search" type="search" placeholder="Find anything…" aria-label="Find a node" autocomplete="off">
+      <ul id="search-results" class="search-results" hidden></ul>
+    </div>
+    <div class="seg" role="group" aria-label="Edge filter">
+      <label><input type="checkbox" data-kind="depends" checked> code</label>
+      <label><input type="checkbox" data-kind="http" checked> http</label>
+      <label><input type="checkbox" data-kind="data" checked> data</label>
+      <label><input type="checkbox" data-kind="uses" checked> uses</label>
+      <label><input type="checkbox" data-kind="runtime" checked> runtime</label>
+      <label title="Show test code"><input type="checkbox" id="tests"> tests</label>
+    </div>
+    <button id="labels" class="toggle" aria-pressed="true" title="Show relationship labels">Labels</button>
+    <button id="dir" class="toggle" title="Toggle layout direction">↓ TB</button>
+    <button id="fit" class="icon" title="Fit to screen (F)" aria-label="Fit to screen">⤢</button>
+    <button id="png" class="icon" title="Download PNG" aria-label="Download PNG">⇩</button>
+  </nav>
+
+  <main class="workspace">
+    <section id="canvas-wrap" class="canvas-wrap">
+      <div id="cy" class="cy" aria-label="Architecture diagram"></div>
+      <div id="empty" class="empty">
+        <h1>See your software as a landscape</h1>
+        <p>Paste a public GitHub repository or a local path above. The code is analyzed with fast static analysis,
+           then a local model (Ollama or LM Studio) writes short descriptions. Nothing leaves your machine.</p>
+        <ul class="howto">
+          <li><b>Double-click</b> a box to zoom into it</li>
+          <li><b>Backspace</b> or the breadcrumb to zoom out</li>
+          <li><b>Click</b> a box or an arrow for details</li>
+        </ul>
+      </div>
+      <div id="status" class="status" hidden></div>
+      <div class="legend" id="legend">
+        <span class="lg person">Person</span>
+        <span class="lg system">System</span>
+        <span class="lg container">Container</span>
+        <span class="lg component">Component</span>
+        <span class="lg file">File</span>
+        <span class="lg external">External</span>
+        <span class="lg-sep"></span>
+        <span class="le depends">code</span>
+        <span class="le http">http</span>
+        <span class="le data">data</span>
+        <span class="le uses">uses</span>
+        <span class="le runtime">runtime</span>
+      </div>
+    </section>
+    <aside id="panel" class="panel" aria-live="polite">
+      <div class="panel-empty">Select a box or an arrow to see what it does and how it connects.</div>
+    </aside>
+  </main>
+
+  <script src="/static/vendor/cytoscape.min.js"></script>
+  <script src="/static/vendor/cytoscape-dagre.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
