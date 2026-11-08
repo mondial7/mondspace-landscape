@@ -33,10 +33,13 @@ screenshots: install ## Regenerate docs/images with the tool itself (needs Chrom
 	scripts/screenshots.sh . docs/images
 
 release-snapshot: ## Build release archives locally without publishing
-	goreleaser release --snapshot --clean
+	goreleaser release --snapshot --clean --skip=sbom
 
-release: ## Publish a release for the current tag (GitHub release + Homebrew tap)
-	GITHUB_TOKEN=$$(gh auth token) HOMEBREW_TAP_TOKEN=$$(gh auth token) goreleaser release --clean
+release: ## Tag and push VERSION (make release VERSION=v0.2.0); the release workflow publishes it
+	@test -n "$(VERSION)" || { echo "usage: make release VERSION=vX.Y.Z"; exit 1; }
+	@grep -qF "## [$(patsubst v%,%,$(VERSION))]" CHANGELOG.md || { echo "CHANGELOG.md has no section for $(VERSION)"; exit 1; }
+	git tag -a $(VERSION) -m "$(VERSION)"
+	git push origin $(VERSION)
 
 clean: ## Remove build artefacts
 	rm -rf $(BINARY) dist coverage.out

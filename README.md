@@ -171,6 +171,12 @@ make screenshots   # regenerate the README/Pages images with the tool itself (ne
 make help          # everything else
 ```
 
+Releasing: add a `## [X.Y.Z]` section to `CHANGELOG.md`, then `make release VERSION=vX.Y.Z`.
+The `release` workflow builds the archives (with SBOMs), publishes the GitHub release with
+that CHANGELOG section as notes, and updates the formula in
+[mondial7/homebrew-tap](https://github.com/mondial7/homebrew-tap) (needs the
+`HOMEBREW_TAP_TOKEN` secret; without it the tap step is skipped).
+
 ```
 cmd/landscape        CLI: flags, wiring, local server lifecycle
 internal/scan        file walk, language detection, .gitignore, test detection
