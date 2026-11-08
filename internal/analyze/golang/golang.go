@@ -67,7 +67,7 @@ func (Analyzer) Analyze(ctx context.Context, repo *scan.Repo) (analyze.Facts, er
 	if len(files) == 0 {
 		return facts, nil
 	}
-	module := modulePath(repo)
+	mods := findModules(repo)
 	pkgs := map[string]*pkg{}
 	fset := token.NewFileSet()
 
@@ -119,7 +119,8 @@ func (Analyzer) Analyze(ctx context.Context, repo *scan.Repo) (analyze.Facts, er
 	for _, dir := range dirs {
 		p := pkgs[dir]
 		u := p.unit
-		u.Name = displayName(u.Name, dir, module)
+		modDir, modPath := mods.of(dir)
+		u.Name = displayName(u.Name, dir, modDir, modPath)
 		if p.hasMain {
 			u.Entry = true
 			if !p.tags["http-server"] {
@@ -140,12 +141,9 @@ func (Analyzer) Analyze(ctx context.Context, repo *scan.Repo) (analyze.Facts, er
 		}
 		sort.Strings(imports)
 		for _, imp := range imports {
-			if module == "" || (imp != module && !strings.HasPrefix(imp, module+"/")) {
+			target, ok := mods.resolve(imp)
+			if !ok {
 				continue
-			}
-			target := strings.TrimPrefix(strings.TrimPrefix(imp, module), "/")
-			if target == "" {
-				target = "."
 			}
 			if _, ok := pkgs[target]; ok && target != dir {
 				for _, file := range p.imports[imp] {
@@ -247,15 +245,15 @@ func inspectFile(p *pkg, file *ast.File, filePath string, src []byte, dir string
 
 // displayName names a package: its package clause, except for main
 // packages (and unparsable ones), which are named after their directory or,
-// at the repository root, after the module.
-func displayName(pkgName, dir, module string) string {
+// at the root of a module, after the module.
+func displayName(pkgName, dir, modDir, module string) string {
 	if pkgName != "" && pkgName != "main" {
 		return pkgName
 	}
+	if dir == modDir && module != "" {
+		return moduleName(module)
+	}
 	if dir == "." {
-		if module != "" {
-			return moduleName(module)
-		}
 		return "main"
 	}
 	return path.Base(dir)
@@ -308,18 +306,52 @@ func embedPatterns(src []byte) []string {
 	return out
 }
 
-func modulePath(repo *scan.Repo) string {
-	data, err := repo.Read("go.mod")
-	if err != nil {
-		return ""
-	}
-	sc := bufio.NewScanner(bytes.NewReader(data))
-	for sc.Scan() {
-		if f := strings.Fields(sc.Text()); len(f) >= 2 && f[0] == "module" {
-			return strings.Trim(f[1], `"`)
+// modules maps each directory holding a go.mod to its module path.
+type modules map[string]string
+
+func findModules(repo *scan.Repo) modules {
+	mods := modules{}
+	for _, f := range repo.ByLanguage("gomod") {
+		data, err := repo.Read(f.Path)
+		if err != nil {
+			continue
+		}
+		sc := bufio.NewScanner(bytes.NewReader(data))
+		for sc.Scan() {
+			if fields := strings.Fields(sc.Text()); len(fields) >= 2 && fields[0] == "module" {
+				mods[path.Dir(f.Path)] = strings.Trim(fields[1], `"`)
+				break
+			}
 		}
 	}
-	return ""
+	return mods
+}
+
+// of returns the module (directory and path) containing dir.
+func (m modules) of(dir string) (modDir, modPath string) {
+	for d := dir; ; d = path.Dir(d) {
+		if p, ok := m[d]; ok {
+			return d, p
+		}
+		if d == "." || d == "/" {
+			return "", ""
+		}
+	}
+}
+
+// resolve maps an import path to a repository directory if it belongs to
+// one of the repository's modules (longest module path wins).
+func (m modules) resolve(imp string) (string, bool) {
+	best, bestDir := "", ""
+	for dir, mod := range m {
+		if (imp == mod || strings.HasPrefix(imp, mod+"/")) && len(mod) > len(best) {
+			best, bestDir = mod, dir
+		}
+	}
+	if best == "" {
+		return "", false
+	}
+	return path.Join(bestDir, strings.TrimPrefix(imp, best)), true
 }
 
 func findExternal(pkgs map[string]*pkg, id string) analyze.External {

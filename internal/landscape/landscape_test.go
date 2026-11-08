@@ -364,3 +364,23 @@ func TestFileLevelDepsStartAtTheFile(t *testing.T) {
 		t.Errorf("container assignment must still use unit deps, got %q", got)
 	}
 }
+
+func TestComposeServiceMatchesContainerByName(t *testing.T) {
+	m, err := Build(Input{
+		Name:  "x",
+		Files: []scan.File{{Path: "server/cmd/api/main.go", Language: "go", Lines: 3}},
+		Facts: analyze.Facts{
+			Units:    []analyze.Unit{{ID: "go:server/cmd/api", Name: "api", Dir: "server/cmd/api", Language: "go", Files: []string{"server/cmd/api/main.go"}, Entry: true}},
+			Services: []analyze.Service{{Name: "api", Platform: "docker-compose", Image: "${REGISTRY}/api:dev"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Graph.Has("ctr:svc:api") {
+		t.Error("service named like a code container should attach to it, not create a new container")
+	}
+	if n, _ := m.Graph.Node("ctr:server/cmd/api"); n.Details["deploy"] == "" {
+		t.Errorf("container deploy details missing: %+v", n.Details)
+	}
+}

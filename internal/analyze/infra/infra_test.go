@@ -114,3 +114,21 @@ func TestBrokenComposeIsAWarning(t *testing.T) {
 		t.Errorf("warnings = %v, want 1", f.Warnings)
 	}
 }
+
+func TestMoreBackingImages(t *testing.T) {
+	f := run(t, fstest.MapFS{"docker-compose.yml": {Data: []byte(`
+services:
+  postgres: {image: pgvector/pgvector:0.8.1-pg17}
+  garage: {image: dxflrs/garage:v2.1.0}
+  prometheus: {image: prom/prometheus:v3.5.0}
+  grafana: {image: grafana/grafana:12.1.0}
+`)}})
+	got := map[string]string{}
+	for _, e := range f.Externals {
+		got[e.ID] = e.Name
+	}
+	want := map[string]string{"compose:postgres": "PostgreSQL", "compose:garage": "Garage (S3)", "compose:prometheus": "Prometheus", "compose:grafana": "Grafana"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("externals = %v, want %v", got, want)
+	}
+}

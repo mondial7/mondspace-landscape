@@ -628,21 +628,35 @@ func (a *assembler) addServices() error {
 	return nil
 }
 
-// containerForService maps a service to the code container it builds.
+// containerForService maps a service to the code container it runs: by
+// build directory first, then by a uniquely matching container name.
 func (a *assembler) containerForService(s analyze.Service) (string, bool) {
-	if s.BuildDir == "" {
+	if key, ok := a.containerByBuildDir(s.BuildDir); ok {
+		return key, true
+	}
+	var named []string
+	for _, key := range a.codeContainers() {
+		if a.containers[key].name == s.Name {
+			named = append(named, key)
+		}
+	}
+	if len(named) == 1 {
+		return named[0], true
+	}
+	return "", false
+}
+
+func (a *assembler) containerByBuildDir(dir string) (string, bool) {
+	if dir == "" {
 		return "", false
 	}
-	if _, ok := a.containers[s.BuildDir]; ok {
-		return s.BuildDir, true
+	if _, ok := a.containers[dir]; ok {
+		return dir, true
 	}
 	// A build context above the code: pick the single container under it.
 	var under []string
-	for _, key := range a.ctrOrder {
-		if key == sharedKey || strings.HasPrefix(key, "svc:") {
-			continue
-		}
-		if s.BuildDir == "." || key == s.BuildDir || strings.HasPrefix(key, s.BuildDir+"/") {
+	for _, key := range a.codeContainers() {
+		if dir == "." || key == dir || strings.HasPrefix(key, dir+"/") {
 			under = append(under, key)
 		}
 	}
@@ -650,6 +664,17 @@ func (a *assembler) containerForService(s analyze.Service) (string, bool) {
 		return under[0], true
 	}
 	return "", false
+}
+
+// codeContainers lists containers derived from source code.
+func (a *assembler) codeContainers() []string {
+	var out []string
+	for _, key := range a.ctrOrder {
+		if key != sharedKey && !strings.HasPrefix(key, "svc:") {
+			out = append(out, key)
+		}
+	}
+	return out
 }
 
 // addPeople adds the humans interacting with the system: browser users of

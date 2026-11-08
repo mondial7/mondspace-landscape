@@ -6,6 +6,8 @@ package literal
 import (
 	"context"
 	"fmt"
+	"path"
+	"strings"
 
 	"github.com/mondial7/mondspace-landscape/internal/analyze"
 	"github.com/mondial7/mondspace-landscape/internal/scan"
@@ -18,6 +20,10 @@ var codeLanguages = map[string]bool{
 	"kotlin": true, "java": true, "ruby": true, "rust": true, "csharp": true, "php": true,
 	"c": true, "cpp": true, "html": true, "sql": true, "shell": true,
 }
+
+// maxHostsPerFile is how many distinct hosts a file may mention before they
+// are grouped into a single external system.
+const maxHostsPerFile = 5
 
 // Analyzer implements analyze.Analyzer.
 type Analyzer struct{}
@@ -42,7 +48,18 @@ func (Analyzer) Analyze(ctx context.Context, repo *scan.Repo) (analyze.Facts, er
 		if err != nil {
 			return facts, fmt.Errorf("read %s: %w", f.Path, err)
 		}
-		for _, host := range analyze.ExtractHosts(src) {
+		hosts := analyze.ExtractHosts(src)
+		if len(hosts) > maxHostsPerFile {
+			// A list of sources (feeds, mirrors, links) is one dependency, not N.
+			e := analyze.External{
+				ID: "hosts:" + f.Path, Kind: analyze.ExtHTTP, Technology: "web hosts",
+				Name: fmt.Sprintf("%d web hosts (%s)", len(hosts), path.Base(f.Path)),
+			}
+			facts.AddExternal(e)
+			facts.Uses = append(facts.Uses, analyze.Use{File: f.Path, External: e.ID, Kind: analyze.EdgeKindFor(e.Kind), Label: hostList(hosts)})
+			hosts = nil
+		}
+		for _, host := range hosts {
 			e := analyze.External{ID: "host:" + host, Name: host, Kind: analyze.ExtHTTP}
 			facts.AddExternal(e)
 			facts.Uses = append(facts.Uses, analyze.Use{File: f.Path, External: e.ID, Kind: analyze.EdgeKindFor(e.Kind)})
@@ -52,4 +69,13 @@ func (Analyzer) Analyze(ctx context.Context, repo *scan.Repo) (analyze.Facts, er
 		}
 	}
 	return facts, nil
+}
+
+// hostList renders hosts for an edge label, bounded in length.
+func hostList(hosts []string) string {
+	const max = 12
+	if len(hosts) <= max {
+		return strings.Join(hosts, ", ")
+	}
+	return strings.Join(hosts[:max], ", ") + fmt.Sprintf(", … +%d more", len(hosts)-max)
 }

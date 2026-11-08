@@ -33,11 +33,16 @@ var backingImages = []struct {
 	kind   analyze.ExternalKind
 }{
 	{"postgres", "PostgreSQL", analyze.ExtDatabase}, {"postgis", "PostgreSQL", analyze.ExtDatabase},
+	{"pgvector", "PostgreSQL", analyze.ExtDatabase}, {"timescale", "PostgreSQL", analyze.ExtDatabase},
 	{"mysql", "MySQL", analyze.ExtDatabase}, {"mariadb", "MariaDB", analyze.ExtDatabase},
 	{"mongo", "MongoDB", analyze.ExtDatabase}, {"redis", "Redis", analyze.ExtDatabase},
 	{"valkey", "Valkey", analyze.ExtDatabase}, {"memcached", "Memcached", analyze.ExtDatabase},
 	{"elasticsearch", "Elasticsearch", analyze.ExtDatabase}, {"opensearch", "OpenSearch", analyze.ExtDatabase},
-	{"minio", "MinIO (S3)", analyze.ExtCloud}, {"rabbitmq", "RabbitMQ", analyze.ExtQueue},
+	{"minio", "MinIO (S3)", analyze.ExtStorage}, {"garage", "Garage (S3)", analyze.ExtStorage},
+	{"localstack", "LocalStack (AWS)", analyze.ExtCloud}, {"rabbitmq", "RabbitMQ", analyze.ExtQueue},
+	{"prometheus", "Prometheus", analyze.ExtObserve}, {"grafana", "Grafana", analyze.ExtObserve},
+	{"loki", "Loki", analyze.ExtObserve}, {"jaeger", "Jaeger", analyze.ExtObserve},
+	{"otel/opentelemetry-collector", "OpenTelemetry Collector", analyze.ExtObserve},
 	{"nats", "NATS", analyze.ExtQueue}, {"bitnami/kafka", "Kafka", analyze.ExtQueue},
 	{"confluentinc/cp-kafka", "Kafka", analyze.ExtQueue}, {"ollama/ollama", "Ollama", analyze.ExtAI},
 }

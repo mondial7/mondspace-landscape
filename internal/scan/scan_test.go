@@ -21,6 +21,7 @@ func TestLanguage(t *testing.T) {
 		{"deploy/api.Dockerfile", "dockerfile"},
 		{"docker-compose.yml", "yaml"},
 		{"fly.toml", "toml"},
+		{"server/go.mod", "gomod"},
 		{"README.md", "markdown"},
 		{"logo.png", ""},
 	}
@@ -103,5 +104,27 @@ func TestIsTest(t *testing.T) {
 		if got := IsTest(tt.path); got != tt.want {
 			t.Errorf("IsTest(%q) = %v, want %v", tt.path, got, tt.want)
 		}
+	}
+}
+
+func TestScanSkipsNestedRepositoriesAndAgentWorktrees(t *testing.T) {
+	fsys := fstest.MapFS{
+		"main.go":                       {Data: []byte("package main\n")},
+		".claude/worktrees/fix/main.go": {Data: []byte("package main\n")},
+		".claude/worktrees/fix/.git":    {Data: []byte("gitdir: ../../.git/worktrees/fix")},
+		"third_party/lib/.git/HEAD":     {Data: []byte("ref")},
+		"third_party/lib/lib.go":        {Data: []byte("package lib\n")},
+		"tools/gen.go":                  {Data: []byte("package tools\n")},
+	}
+	repo, err := Scan(fsys, "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, f := range repo.Files {
+		got = append(got, f.Path)
+	}
+	if want := []string{"main.go", "tools/gen.go"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("files = %v, want %v (worktrees and nested repos are separate projects)", got, want)
 	}
 }

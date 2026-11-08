@@ -40,7 +40,7 @@ var skipDirs = map[string]bool{
 	"dist": true, "build": true, ".build": true, "out": true, "target": true,
 	".next": true, ".nuxt": true, ".venv": true, "venv": true, "__pycache__": true,
 	"Pods": true, "DerivedData": true, ".idea": true, ".vscode": true,
-	".codeboarding": true, "coverage": true, ".cache": true, ".gradle": true,
+	".codeboarding": true, ".claude": true, ".worktrees": true, "coverage": true, ".cache": true, ".gradle": true,
 }
 
 var extLanguage = map[string]string{
@@ -61,6 +61,9 @@ func Language(p string) string {
 	}
 	if base == "Makefile" {
 		return "make"
+	}
+	if base == "go.mod" {
+		return "gomod"
 	}
 	return extLanguage[strings.ToLower(path.Ext(base))]
 }
@@ -102,7 +105,7 @@ func Scan(fsys fs.FS, name string) (*Repo, error) {
 			return nil
 		}
 		if d.IsDir() {
-			if skipDirs[d.Name()] || ign.match(p, true) {
+			if skipDirs[d.Name()] || ign.match(p, true) || isNestedRepo(fsys, p) {
 				return fs.SkipDir
 			}
 			return nil
@@ -136,6 +139,13 @@ func Scan(fsys fs.FS, name string) (*Repo, error) {
 		repo.index[f.Path] = i
 	}
 	return repo, nil
+}
+
+// isNestedRepo reports whether dir is another repository or a git
+// worktree (it has its own .git file or directory): a separate project.
+func isNestedRepo(fsys fs.FS, dir string) bool {
+	_, err := fs.Stat(fsys, path.Join(dir, ".git"))
+	return err == nil
 }
 
 // File looks up a scanned file by path.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -42,5 +43,34 @@ func TestHostsAndSQLAreAttributedToFiles(t *testing.T) {
 	if len(f.Data) != 1 || f.Data[0].File != "store/store.go" ||
 		!reflect.DeepEqual(f.Data[0].Reads, []string{"users"}) || !reflect.DeepEqual(f.Data[0].Writes, []string{"subs"}) {
 		t.Errorf("data = %+v", f.Data)
+	}
+}
+
+func TestManyHostsInOneFileAreGrouped(t *testing.T) {
+	src := `var feeds = []string{"https://a.example.net/rss", "https://feeds.one.org/x", "https://two.org/r",
+		"https://three.org/r", "https://four.org/r", "https://five.org/r", "https://six.org/r"}
+	const api = "https://api.mistral.ai/v1"`
+	fsys := fstest.MapFS{"internal/feeds/sources.go": {Data: []byte(src)}, "internal/llm/llm.go": {Data: []byte(`u := "https://api.mistral.ai/v1"`)}}
+	repo, err := scan.Scan(fsys, "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := New().Analyze(context.Background(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var exts []string
+	for _, e := range f.Externals {
+		exts = append(exts, e.ID+"="+e.Name)
+	}
+	sort.Strings(exts)
+	want := []string{"host:api.mistral.ai=api.mistral.ai", "hosts:internal/feeds/sources.go=7 web hosts (sources.go)"}
+	if !reflect.DeepEqual(exts, want) {
+		t.Errorf("externals = %v, want %v", exts, want)
+	}
+	for _, u := range f.Uses {
+		if u.External == "hosts:internal/feeds/sources.go" && !strings.Contains(u.Label, "feeds.one.org") {
+			t.Errorf("grouped use label = %q, want the host list", u.Label)
+		}
 	}
 }

@@ -56,6 +56,7 @@ const (
 	ExtHosting  ExternalKind = "hosting"
 	ExtMail     ExternalKind = "mail"
 	ExtStorage  ExternalKind = "storage" // local filesystem / object storage
+	ExtObserve  ExternalKind = "observability"
 )
 
 // External is a system the code talks to but does not own.

@@ -254,16 +254,17 @@ func hasTag(u analyze.Unit, tag string) bool {
 }
 
 func TestDisplayNameSkipsMajorVersionSuffix(t *testing.T) {
-	tests := []struct{ pkg, dir, module, want string }{
-		{"main", ".", "github.com/charmbracelet/glow/v3", "glow"},
-		{"main", ".", "example.com/shop", "shop"},
-		{"main", "cmd/tool", "example.com/x/v2", "tool"},
-		{"store", "internal/store", "example.com/x", "store"},
-		{"", ".", "", "main"},
+	tests := []struct{ pkg, dir, modDir, module, want string }{
+		{"main", ".", ".", "github.com/charmbracelet/glow/v3", "glow"},
+		{"main", ".", ".", "example.com/shop", "shop"},
+		{"main", "cmd/tool", ".", "example.com/x/v2", "tool"},
+		{"main", "tools", "tools", "example.com/tools", "tools"},
+		{"store", "internal/store", ".", "example.com/x", "store"},
+		{"", ".", "", "", "main"},
 	}
 	for _, tt := range tests {
-		if got := displayName(tt.pkg, tt.dir, tt.module); got != tt.want {
-			t.Errorf("displayName(%q,%q,%q) = %q, want %q", tt.pkg, tt.dir, tt.module, got, tt.want)
+		if got := displayName(tt.pkg, tt.dir, tt.modDir, tt.module); got != tt.want {
+			t.Errorf("displayName(%q,%q,%q,%q) = %q, want %q", tt.pkg, tt.dir, tt.modDir, tt.module, got, tt.want)
 		}
 	}
 }
@@ -273,6 +274,36 @@ func TestDepsRecordTheImportingFile(t *testing.T) {
 	for _, d := range f.Deps {
 		if d.From == "go:internal/server" && d.To == "go:internal/store" && d.File != "internal/server/server.go" {
 			t.Errorf("dep file = %q, want internal/server/server.go", d.File)
+		}
+	}
+}
+
+func TestNestedGoModules(t *testing.T) {
+	fsys := fstest.MapFS{
+		"server/go.mod":                {Data: []byte("module example.com/connect\n")},
+		"server/cmd/api/main.go":       {Data: []byte("package main\n\nimport \"example.com/connect/internal/feed\"\n\nfunc main() { feed.Run() }\n")},
+		"server/internal/feed/feed.go": {Data: []byte("package feed\n\nfunc Run() {}\n")},
+		"tools/go.mod":                 {Data: []byte("module example.com/tools\n")},
+		"tools/main.go":                {Data: []byte("package main\n\nfunc main() {}\n")},
+	}
+	repo, err := scan.Scan(fsys, "connect")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := New().Analyze(context.Background(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var deps []string
+	for _, d := range f.Deps {
+		deps = append(deps, d.From+"->"+d.To)
+	}
+	if want := []string{"go:server/cmd/api->go:server/internal/feed"}; !reflect.DeepEqual(deps, want) {
+		t.Errorf("deps = %v, want %v", deps, want)
+	}
+	for _, u := range f.Units {
+		if u.ID == "go:tools" && u.Name != "tools" {
+			t.Errorf("tools main named %q, want module name tools", u.Name)
 		}
 	}
 }
