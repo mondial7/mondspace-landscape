@@ -72,6 +72,7 @@ In the browser:
 | Browse every box in the current view | the side panel, when nothing is selected |
 | Find anything in the whole model | <kbd>/</kbd> |
 | Show/hide relationship kinds and tests | the coloured chips in the toolbar (they double as the legend) |
+| Highlight one kind of box (system, container, component, file, person, external) | the legend at the bottom, or <kbd>1</kbd>–<kbd>6</kbd> |
 | Relationship labels, layout direction, fit | <kbd>L</kbd>, <kbd>D</kbd>, <kbd>F</kbd> (or the toolbar) |
 | All shortcuts | <kbd>?</kbd> |
 
@@ -83,6 +84,12 @@ Every view has its own URL (`#/a/<analysis>/<node>`), so the browser's back butt
 you can point a colleague at the exact level you are discussing.
 
 ### The levels
+
+Each kind of box has its own colour and shape: people are violet pills, the system navy,
+containers blue, components teal with square corners, files light document shapes and external
+systems grey with a dashed border. The legend shows the zoom levels in order
+(System › Container › Component › File) and what sits around them (Person, External), with how
+many of each are in the current view.
 
 | Level | Shows | Example |
 | --- | --- | --- |

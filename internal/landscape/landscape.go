@@ -337,8 +337,19 @@ func (a *assembler) addSystem() error {
 }
 
 func (a *assembler) addContainers() error {
+	// A container that only holds test code (tests whose target could not be
+	// resolved) is test code too, so the UI hides it with the other tests.
+	onlyTests := map[string]bool{}
+	for _, c := range a.comps {
+		if v, seen := onlyTests[c.container]; !seen || v {
+			onlyTests[c.container] = c.test
+		}
+	}
 	for _, key := range a.ctrOrder {
 		c := a.containers[key]
+		if onlyTests[key] {
+			c.tags["test"] = true
+		}
 		n := graph.Node{
 			ID: containerID(key), Name: c.name, Kind: graph.KindContainer, Parent: SystemID,
 			Technology: technology(c.langs), Tags: sortedSet(c.tags), Path: key,

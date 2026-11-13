@@ -88,13 +88,23 @@
       </div>
       <div id="status" class="status" hidden></div>
       <div id="zoom-hint" class="zoom-hint" hidden>Zoomed out: names only. Zoom in or hover for details.</div>
-      <div class="legend" id="legend">
-        <span class="lg person">Person</span>
-        <span class="lg system">System</span>
-        <span class="lg container">Container</span>
-        <span class="lg component">Component</span>
-        <span class="lg file">File</span>
-        <span class="lg external">External</span>
+      <div class="legend" id="legend" role="toolbar" aria-label="Kinds of boxes: click to highlight (keys 1 to 6)">
+        <div class="legend-group">
+          <span class="legend-title">Zoom levels</span>
+          <button class="lg" data-kind="system" aria-pressed="false" title="System: the software as a whole (1)"><i class="sw system"></i>System <span class="n"></span></button>
+          <span class="chev" aria-hidden="true">›</span>
+          <button class="lg" data-kind="container" aria-pressed="false" title="Container: a runnable or deployable part, such as a server, CLI or app (2)"><i class="sw container"></i>Container <span class="n"></span></button>
+          <span class="chev" aria-hidden="true">›</span>
+          <button class="lg" data-kind="component" aria-pressed="false" title="Component: a package or source directory (3)"><i class="sw component"></i>Component <span class="n"></span></button>
+          <span class="chev" aria-hidden="true">›</span>
+          <button class="lg" data-kind="file" aria-pressed="false" title="File: a single source file (4)"><i class="sw file"></i>File <span class="n"></span></button>
+        </div>
+        <span class="legend-sep" aria-hidden="true"></span>
+        <div class="legend-group">
+          <span class="legend-title">Around</span>
+          <button class="lg" data-kind="person" aria-pressed="false" title="Person: someone using or operating the system (5)"><i class="sw person"></i>Person <span class="n"></span></button>
+          <button class="lg" data-kind="external" aria-pressed="false" title="External system: databases, APIs and services outside the code (6)"><i class="sw external"></i>External <span class="n"></span></button>
+        </div>
       </div>
     </section>
     <aside id="panel" class="panel" aria-live="polite">
@@ -112,6 +122,7 @@
       <dt><kbd>F</kbd></dt><dd>fit the diagram to the screen</dd>
       <dt><kbd>L</kbd></dt><dd>show or hide relationship labels</dd>
       <dt><kbd>D</kbd></dt><dd>switch layout direction</dd>
+      <dt><kbd>1</kbd> … <kbd>6</kbd></dt><dd>highlight a kind of box: system, container, component, file, person, external (again to clear)</dd>
       <dt><kbd>?</kbd></dt><dd>this help</dd>
     </dl>
     <p>Hover a box to highlight what it talks to. Every view has its own URL, so the back button works and you can share the exact level you are discussing.</p>

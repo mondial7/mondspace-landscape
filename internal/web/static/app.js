@@ -58,6 +58,7 @@
     labels: null,       // relationship labels: true/false, or null = automatic
     hiddenKinds: new Set(),
     showTests: false,
+    focusKind: '',      // kind of box highlighted from the legend ('' = none)
     pollTimer: null,
     viewVersion: '',
   };
@@ -97,7 +98,11 @@
         'text-valign': 'center', 'text-halign': 'center', 'line-height': 1.3,
         'border-width': 0, 'corner-radius': 10,
       } },
+      // Each kind has its own shape as well as its own colour (see the legend).
       { selector: 'node[kind = "person"]', style: { shape: 'round-rectangle', 'corner-radius': 28 } },
+      { selector: 'node[kind = "system"]', style: { 'corner-radius': 14 } },
+      { selector: 'node[kind = "component"]', style: { 'corner-radius': 3 } },
+      { selector: 'node[kind = "file"]', style: { shape: 'cut-rectangle', 'corner-radius': 0 } },
       { selector: 'node[kind = "external"]', style: { 'border-width': 1.5, 'border-style': 'dashed', 'border-color': c.surface } },
       { selector: 'node.context', style: { opacity: 0.78, 'border-width': 2, 'border-style': 'dashed', 'border-color': c.muted } },
       { selector: 'node.expandable', style: { 'border-width': 3, 'border-color': c.accent, 'border-style': 'double' } },
@@ -114,6 +119,12 @@
       { selector: 'node:active', style: { 'overlay-opacity': 0.1, 'overlay-shape': 'round-rectangle' } },
       { selector: 'node.faded, edge.faded', style: { opacity: 0.18 } },
       { selector: 'node.dim, edge.dim', style: { opacity: 0.25 } },
+      // Highlight one kind of box (legend buttons, keys 1-6).
+      { selector: 'node.kfade, edge.kfade', style: { opacity: 0.14 } },
+      { selector: 'node.kfocus', style: {
+        'underlay-color': (n) => c[n.data('kind')] || c.accent, 'underlay-opacity': 0.45, 'underlay-padding': 7,
+        'underlay-shape': 'round-rectangle', 'underlay-corner-radius': 14,
+      } },
       { selector: 'edge.lit', style: { width: (e) => e.data('width') + 1.5, 'z-index': 9, label: 'data(full)' } },
       { selector: 'edge.near', style: { label: 'data(full)', 'z-index': 9 } },
       { selector: 'edge', style: {
@@ -312,6 +323,7 @@
     document.body.classList.remove('no-view');
     if (!relayout && ids === state.viewVersion) {
       for (const el of els) cy.getElementById(el.data.id).data(el.data);
+      applyKinds();
       refreshPanel();
       return;
     }
@@ -321,6 +333,7 @@
     compact = null;
     layout(false);
     syncLabelsButton();
+    applyKinds();
     renderCrumbs(view);
     refreshPanel();
   }
@@ -364,6 +377,56 @@
   cy.on('tap', 'node', (evt) => select({ type: 'node', id: evt.target.id() }));
   cy.on('tap', 'edge', (evt) => select({ type: 'edge', id: evt.target.id() }));
   cy.on('tap', (evt) => { if (evt.target === cy) select(null); });
+
+  // ---------- kinds of boxes (legend) ----------
+  const KIND_KEYS = ['system', 'container', 'component', 'file', 'person', 'external'];
+  const legendButtons = [...document.querySelectorAll('#legend .lg')];
+
+  // applyKinds updates the legend counts for the current view and, when a
+  // kind is focused, highlights its boxes and fades everything else.
+  function applyKinds() {
+    const counts = {};
+    cy.nodes().forEach((n) => { counts[n.data('kind')] = (counts[n.data('kind')] || 0) + 1; });
+    // A highlight only makes sense where that kind exists: moving to a level
+    // without it clears it rather than leaving a pressed button and no boxes.
+    if (state.focusKind && !counts[state.focusKind]) state.focusKind = '';
+    for (const b of legendButtons) {
+      const k = b.dataset.kind, n = counts[k] || 0, on = state.focusKind === k;
+      b.querySelector('.n').textContent = n ? String(n) : '';
+      b.setAttribute('aria-pressed', String(on));
+      b.disabled = !n;
+      b.dataset.tip = b.dataset.tip || b.title;
+      b.title = n ? b.dataset.tip : `${b.dataset.tip}: none at this level`;
+    }
+    $('#legend').classList.toggle('focusing', !!state.focusKind);
+    cy.batch(() => {
+      cy.elements().removeClass('kfade kfocus');
+      if (!state.focusKind) return;
+      const hit = cy.nodes(`[kind = "${state.focusKind}"]`);
+      hit.addClass('kfocus');
+      cy.nodes().not(hit).addClass('kfade');
+      cy.edges().filter((e) => !hit.contains(e.source()) && !hit.contains(e.target())).addClass('kfade');
+    });
+  }
+
+  function plural(kind, n) {
+    const label = (KIND_LABEL[kind] || kind).toLowerCase();
+    if (n === 1) return label;
+    return kind === 'person' ? 'people' : `${label}s`;
+  }
+
+  function focusKind(kind) {
+    if (!cy.nodes(`[kind = "${kind}"]`).length) {
+      showStatus(`No ${plural(kind, 0)} at this level`, 'info', 1800);
+      return;
+    }
+    state.focusKind = state.focusKind === kind ? '' : kind;
+    applyKinds();
+    const n = cy.nodes(`[kind = "${kind}"]`).length;
+    showStatus(state.focusKind ? `${n} ${plural(kind, n)} highlighted · Esc to clear` : '', 'info', 2200);
+  }
+
+  legendButtons.forEach((b) => b.addEventListener('click', () => focusKind(b.dataset.kind)));
 
   // ---------- selection & details panel ----------
   function select(sel, { reveal = false } = {}) {
@@ -776,13 +839,18 @@
   });
   document.addEventListener('keydown', (ev) => {
     if (ev.target.closest('input, select, textarea, dialog')) return;
-    if (ev.key === 'Escape') { if (state.selected) select(null); return; }
+    if (ev.key === 'Escape') {
+      if (state.selected) select(null);
+      else if (state.focusKind) focusKind(state.focusKind);
+      return;
+    }
     if (ev.key === 'Backspace') { ev.preventDefault(); zoomOut(); return; }
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
     if (ev.key === 'f' || ev.key === 'F') fit(true);
     if (ev.key === 'l' || ev.key === 'L') toggleLabels();
     if (ev.key === 'd' || ev.key === 'D') toggleDir();
     if (ev.key === '?') $('#help-dialog').showModal();
+    if (/^[1-6]$/.test(ev.key) && cy.nodes().length) focusKind(KIND_KEYS[Number(ev.key) - 1]);
     if (ev.key === 'Enter' && state.selected && state.selected.type === 'node') {
       const n = cy.getElementById(state.selected.id).data('raw');
       if (n && n.expandable) zoomTo(n.id);

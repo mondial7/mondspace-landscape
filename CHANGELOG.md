@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- UI: the six kinds of box are clearly distinct (own colour and shape each: violet person pills,
+  navy system, blue containers, teal components, document-shaped files, dashed grey externals).
+  The legend shows them as zoom levels (System › Container › Component › File) plus what is
+  around, with counts for the current view; clicking one (or keys `1`–`6`) highlights that kind.
 - UI: large views stay readable. Very wide ranks are folded into staggered rows that fit the
   screen shape, zoomed-out boxes show their name in a large font, and on busy views
   relationship labels appear on hover and selection (toggle with `L`).
@@ -20,6 +24,8 @@ All notable changes to this project are documented here. The format follows
 - UI: the diagram refits when the window is resized; the status pill no longer covers boxes.
 
 ### Fixed
+- A container holding only test code (tests whose target is not resolvable) is tagged `test`,
+  so it is hidden with the other tests instead of appearing as a part of the system.
 - `landscape serve --port 9000` (flags after `serve` or a path) failed with "expected at most
   one repository".
 - Monorepo analysis: Claude worktrees and nested git checkouts are skipped, nested `go.mod`

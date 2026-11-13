@@ -384,3 +384,23 @@ func TestComposeServiceMatchesContainerByName(t *testing.T) {
 		t.Errorf("container deploy details missing: %+v", n.Details)
 	}
 }
+
+func TestContainerOfOnlyTestsIsTaggedTest(t *testing.T) {
+	files, facts := shopFacts()
+	files = append(files, scan.File{Path: "tools/jstest/layout.test.mjs", Language: "javascript", Lines: 30, Test: true})
+	facts.Units = append(facts.Units, analyze.Unit{
+		ID: "js:tools/jstest", Name: "jstest", Dir: "tools/jstest", Language: "javascript",
+		Files: []string{"tools/jstest/layout.test.mjs"},
+	})
+	m, err := Build(Input{Name: "shop", Files: files, Facts: facts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctr := parentOf(t, m, "cmp:tools/jstest")
+	if n, _ := m.Graph.Node(ctr); !hasTag(n, "test") {
+		t.Errorf("container %s holding only tests has tags %v, want test (so the UI hides it with tests)", ctr, n.Tags)
+	}
+	if n, _ := m.Graph.Node("ctr:."); hasTag(n, "test") {
+		t.Errorf("the main container must not be tagged test: %v", n.Tags)
+	}
+}
