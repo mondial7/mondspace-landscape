@@ -1,4 +1,4 @@
-.PHONY: help test vet fmt fmt-check build install run screenshots release-snapshot release clean
+.PHONY: help test test-js vet fmt fmt-check build install run ui screenshots release-snapshot release clean
 
 BINARY := landscape
 PKG    := ./...
@@ -7,8 +7,14 @@ MAIN   := ./cmd/landscape
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## /{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-test: ## Run unit tests with race detector + coverage
+test: test-js ## Run unit tests with race detector + coverage (Go and UI)
 	go test $(PKG) -race -coverprofile=coverage.out
+
+test-js: ## Run the UI's JavaScript unit tests (needs Node 20+)
+	node --test 'internal/web/jstest/*.test.mjs'
+
+ui: install ## Analyze this repo, serving the UI from disk (reload to see UI edits)
+	LANDSCAPE_WEB_DIR=$(CURDIR)/internal/web/static landscape .
 
 vet: ## go vet
 	go vet $(PKG)

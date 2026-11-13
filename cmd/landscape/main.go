@@ -85,10 +85,20 @@ Flags:
 	fs.IntVar(&o.maxAI, "max-ai", 60, "maximum components described by the model (largest first)")
 	fs.IntVar(&o.workers, "ai-workers", 2, "concurrent model requests")
 	fs.StringVar(&o.cacheDir, "cache", defaultCache(), "where remote repositories are cloned")
-	if err := fs.Parse(args); err != nil {
-		return o, err
+	// The flag package stops at the first positional argument; keep parsing
+	// after it so `landscape serve --port 9000` works as people expect.
+	var rest []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			return o, err
+		}
+		if fs.NArg() == 0 {
+			break
+		}
+		rest = append(rest, fs.Arg(0))
+		args = fs.Args()[1:]
 	}
-	switch rest := fs.Args(); {
+	switch {
 	case len(rest) > 1:
 		return o, fmt.Errorf("expected at most one repository, got %d", len(rest))
 	case len(rest) == 1 && rest[0] == "serve":

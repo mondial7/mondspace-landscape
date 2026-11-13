@@ -22,7 +22,7 @@
       else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
       else el.setAttribute(k, v === true ? '' : v);
     }
-    for (const c of children.flat()) {
+    for (const c of children.flat(Infinity)) {
       if (c == null || c === false) continue;
       el.append(c instanceof Node ? c : document.createTextNode(String(c)));
     }
@@ -55,7 +55,7 @@
     graph: null,        // full graph (lazy, for search & details)
     selected: null,     // {type:'node'|'edge', id}
     rankDir: 'TB',
-    labels: true,
+    labels: null,       // relationship labels: true/false, or null = automatic
     hiddenKinds: new Set(),
     showTests: false,
     pollTimer: null,
@@ -102,20 +102,31 @@
       { selector: 'node.context', style: { opacity: 0.78, 'border-width': 2, 'border-style': 'dashed', 'border-color': c.muted } },
       { selector: 'node.expandable', style: { 'border-width': 3, 'border-color': c.accent, 'border-style': 'double' } },
       { selector: 'node.context.expandable', style: { 'border-style': 'dashed', 'border-width': 2 } },
-      { selector: 'node:selected', style: { 'overlay-color': c.accent, 'overlay-opacity': 0.18, 'overlay-padding': 6 } },
-      { selector: 'node.match', style: { 'overlay-color': c.data, 'overlay-opacity': 0.35, 'overlay-padding': 8 } },
+      // Zoomed out: name only, large enough to read (level of detail).
+      { selector: 'node.compact', style: {
+        label: 'data(short)', 'font-size': 'data(cfont)', 'font-weight': 600, 'text-max-width': (n) => n.data('w') - 18,
+        'line-height': 1.15, 'text-overflow-wrap': 'data(cwrap)',
+      } },
+      { selector: 'node:selected', style: {
+        'overlay-color': c.accent, 'overlay-opacity': 0.22, 'overlay-padding': 7, 'overlay-shape': 'round-rectangle', 'overlay-corner-radius': 14,
+      } },
+      { selector: 'node.match', style: { 'overlay-color': c.data, 'overlay-opacity': 0.4, 'overlay-padding': 9, 'overlay-shape': 'round-rectangle' } },
+      { selector: 'node:active', style: { 'overlay-opacity': 0.1, 'overlay-shape': 'round-rectangle' } },
       { selector: 'node.faded, edge.faded', style: { opacity: 0.18 } },
+      { selector: 'node.dim, edge.dim', style: { opacity: 0.25 } },
+      { selector: 'edge.lit', style: { width: (e) => e.data('width') + 1.5, 'z-index': 9, label: 'data(full)' } },
+      { selector: 'edge.near', style: { label: 'data(full)', 'z-index': 9 } },
       { selector: 'edge', style: {
         width: 'data(width)', 'curve-style': 'bezier', 'line-color': (e) => c[e.data('kind')] || c.depends,
         'target-arrow-color': (e) => c[e.data('kind')] || c.depends, 'target-arrow-shape': 'triangle', 'arrow-scale': 0.9,
-        label: (e) => state.labels ? e.data('label') : '', 'font-size': 9.5, color: c.muted,
+        label: 'data(label)', 'font-size': 10, 'min-zoomed-font-size': 6.5, color: c.muted,
         'text-background-color': c.surface, 'text-background-opacity': 0.9, 'text-background-padding': 2,
         'text-background-shape': 'roundrectangle', 'text-wrap': 'wrap', 'text-max-width': 180,
         'text-rotation': 'none',
       } },
       { selector: 'edge[kind = "runtime"]', style: { 'line-style': 'dashed' } },
       { selector: 'edge[kind = "depends"]', style: { 'line-style': 'solid' } },
-      { selector: 'edge:selected', style: { width: (e) => e.data('width') + 2, 'z-index': 10 } },
+      { selector: 'edge:selected', style: { width: (e) => e.data('width') + 2, 'z-index': 10, label: 'data(full)' } },
     ];
   }
 
@@ -124,6 +135,45 @@
     container: $('#cy'), wheelSensitivity: 0.25, minZoom: 0.1, maxZoom: 3,
     boxSelectionEnabled: false, style: stylesheet(colors()),
   });
+  window.__landscape = { cy }; // handy from the devtools console
+
+  // Level of detail: below this zoom the descriptions are unreadable, so
+  // boxes show just their name in a larger font.
+  const COMPACT_BELOW = 0.62;
+  let compact = null;
+  function updateDetail() {
+    const c = cy.zoom() < COMPACT_BELOW;
+    if (c === compact && !cy.nodes().some((n) => n.hasClass('compact') !== c)) return;
+    compact = c;
+    cy.batch(() => cy.nodes().toggleClass('compact', c));
+    $('#zoom-hint').hidden = !c || !cy.nodes().length;
+  }
+  cy.on('zoom', updateDetail);
+
+  // Hover: highlight what a box talks to (unless something is selected).
+  cy.on('mouseover', 'node', (evt) => {
+    $('#cy').style.cursor = 'pointer';
+    if (state.selected) return;
+    const keep = evt.target.closedNeighborhood();
+    cy.batch(() => {
+      cy.elements().not(keep).addClass('dim');
+      keep.edges().addClass('lit');
+    });
+  });
+  cy.on('mouseout', 'node', () => {
+    $('#cy').style.cursor = '';
+    cy.batch(() => cy.elements().removeClass('dim lit'));
+  });
+  cy.on('mouseover', 'edge', () => { $('#cy').style.cursor = 'pointer'; });
+  cy.on('mouseout', 'edge', () => { $('#cy').style.cursor = ''; });
+
+  // Track whether the user moved the camera, so resizes can refit safely.
+  let userMoved = false;
+  cy.on('dragpan scrollzoom pinchzoom', () => { userMoved = true; });
+  new ResizeObserver(() => {
+    cy.resize();
+    if (!userMoved && cy.nodes().length) fit(false);
+  }).observe($('#cy'));
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => cy.style(stylesheet(colors())));
 
   function truncate(s, n) { return !s ? '' : (s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s); }
@@ -136,6 +186,17 @@
     if (desc) lines.push('', desc);
     if (n.expandable) lines.push('', `⊕ ${n.children} inside`);
     return lines.join('\n');
+  }
+
+  // compactText picks the largest font (up to 24px) at which the longest
+  // word of a name still fits the box, so zoomed-out names do not break
+  // mid-word.
+  function compactText(name, w) {
+    const longest = Math.max(...name.split(/\s+/).map((x) => x.length), 1);
+    const ideal = Math.floor((w - 24) / (0.66 * longest));
+    const cfont = Math.max(17, Math.min(24, ideal));
+    // Only break inside words (host names, paths) when they cannot fit.
+    return { cfont, cwrap: ideal < 17 ? 'anywhere' : 'whitespace' };
   }
 
   function nodeSize(n) {
@@ -151,8 +212,15 @@
   function edgeLabel(e) {
     const labels = e.labels || [];
     if (!labels.length) return '';
-    const shown = labels.slice(0, 3).join('\n');
-    return labels.length > 3 ? `${shown}\n+${labels.length - 3} more` : shown;
+    const shown = labels.slice(0, 2).map((l) => truncate(l, 44)).join('\n');
+    return labels.length > 2 ? `${shown}\n+${labels.length - 2} more` : shown;
+  }
+
+  // Busy views show relationship labels only on hover and selection, unless
+  // the user switched them on or off explicitly.
+  const AUTO_LABEL_EDGES = 14;
+  function labelsOn(edgeCount) {
+    return state.labels ?? edgeCount <= AUTO_LABEL_EDGES;
   }
 
   function primaryKind(kinds) {
@@ -167,34 +235,70 @@
       const { w, h: ht } = nodeSize(n);
       return {
         group: 'nodes',
-        data: { id: n.id, kind: n.kind, label: nodeLabel(n), w, h: ht, raw: n },
+        data: {
+          id: n.id, kind: n.kind, label: nodeLabel(n), short: n.expandable ? `${n.name} ⊕` : n.name,
+          ...compactText(n.name, w), w, h: ht, raw: n,
+        },
         classes: [n.context ? 'context' : '', n.expandable ? 'expandable' : ''].join(' '),
       };
     });
-    const edges = (view.edges || [])
+    const shown = (view.edges || [])
       .filter((e) => visible.has(e.from) && visible.has(e.to))
-      .filter((e) => e.kinds.some((k) => !state.hiddenKinds.has(k)))
-      .map((e) => ({
+      .filter((e) => e.kinds.some((k) => !state.hiddenKinds.has(k)));
+    const on = labelsOn(shown.length);
+    const edges = shown.map((e) => {
+      const full = edgeLabel(e);
+      return {
         group: 'edges',
         data: {
           id: `${e.from}→${e.to}`, source: e.from, target: e.to, kind: primaryKind(e.kinds),
-          label: edgeLabel(e), width: Math.min(1.2 + Math.log2(e.weight + 1), 6), raw: e,
+          label: on ? full : '', full, width: Math.min(1.2 + Math.log2(e.weight + 1), 6), raw: e,
         },
-      }));
+      };
+    });
     return [...nodes, ...edges];
   }
 
   const MAX_FIT_ZOOM = 1.2; // small views should not be blown up
 
+  // Room for the floating status pill (top) and legend (bottom).
+  const FIT_PADDING = { top: 64, right: 32, bottom: 56, left: 32 };
+
+  // fit shows the whole view, but never blows small views up beyond
+  // MAX_FIT_ZOOM.
+  function fit(animate) {
+    const eles = cy.elements();
+    if (!eles.length) return;
+    const bb = eles.boundingBox();
+    const p = FIT_PADDING;
+    const w = Math.max(cy.width() - p.left - p.right, 50), ht = Math.max(cy.height() - p.top - p.bottom, 50);
+    const z = Math.min(MAX_FIT_ZOOM, Math.max(cy.minZoom(), Math.min(w / bb.w, ht / bb.h)));
+    const pan = { x: p.left + (w - z * (bb.x1 + bb.x2)) / 2, y: p.top + (ht - z * (bb.y1 + bb.y2)) / 2 };
+    if (animate) cy.animate({ zoom: z, pan }, { duration: 220, complete: updateDetail });
+    else { cy.viewport({ zoom: z, pan }); updateDetail(); }
+  }
+
+  // layout: dagre for ranks and crossings, then fold ranks that are too
+  // wide for the screen into several rows (see layout.js), then fit.
   function layout(animate) {
-    const l = cy.layout({
+    userMoved = false;
+    const before = animate ? new Map(cy.nodes().map((n) => [n.id(), { ...n.position() }])) : null;
+    cy.layout({
       name: 'dagre', rankDir: state.rankDir, nodeSep: 40, rankSep: 90, edgeSep: 16,
-      ranker: 'network-simplex', animate, animationDuration: 250, fit: true, padding: 40,
-    });
-    l.one('layoutstop', () => {
-      if (cy.zoom() > MAX_FIT_ZOOM) { cy.zoom(MAX_FIT_ZOOM); cy.center(); }
-    });
-    l.run();
+      ranker: 'network-simplex', animate: false, fit: false,
+    }).run();
+    const boxes = cy.nodes().map((n) => ({ id: n.id(), ...n.position(), w: n.data('w'), h: n.data('h') }));
+    const aspect = Math.max(cy.width(), 1) / Math.max(cy.height(), 1);
+    const placed = window.LandscapeLayout.wrapRanks(boxes, { dir: state.rankDir, aspect, gap: 40 });
+    if (!before) {
+      cy.batch(() => placed.forEach((p) => cy.getElementById(p.id).position({ x: p.x, y: p.y })));
+      fit(false);
+      return;
+    }
+    // Animate from the old positions to the new ones.
+    cy.batch(() => placed.forEach((p) => cy.getElementById(p.id).position(before.get(p.id) || p)));
+    placed.forEach((p) => cy.getElementById(p.id).animate({ position: { x: p.x, y: p.y } }, { duration: 250 }));
+    setTimeout(() => fit(true), 260);
   }
 
   // Render a view. When only descriptions changed (same node/edge ids),
@@ -204,6 +308,8 @@
     const els = elements(view);
     const ids = els.map((e) => e.data.id).sort().join('|');
     $('#empty').hidden = true;
+    $('#progress').hidden = true;
+    document.body.classList.remove('no-view');
     if (!relayout && ids === state.viewVersion) {
       for (const el of els) cy.getElementById(el.data.id).data(el.data);
       refreshPanel();
@@ -212,7 +318,9 @@
     state.viewVersion = ids;
     cy.elements().remove();
     cy.add(els);
+    compact = null;
     layout(false);
+    syncLabelsButton();
     renderCrumbs(view);
     refreshPanel();
   }
@@ -258,15 +366,30 @@
   cy.on('tap', (evt) => { if (evt.target === cy) select(null); });
 
   // ---------- selection & details panel ----------
-  function select(sel) {
+  function select(sel, { reveal = false } = {}) {
     state.selected = sel;
-    cy.elements().removeClass('faded');
+    cy.elements().removeClass('faded dim lit near');
+    cy.elements().unselect();
     if (sel) {
       const el = cy.getElementById(sel.id);
+      el.select();
       const keep = sel.type === 'node' ? el.closedNeighborhood() : el.union(el.connectedNodes());
       cy.elements().not(keep).addClass('faded');
+      keep.edges().addClass('near');
+      if (reveal) revealElement(el);
     }
     refreshPanel();
+  }
+
+  // revealElement brings an element into view at a readable zoom when it
+  // is off-screen or too small to read.
+  function revealElement(el) {
+    if (!el.length) return;
+    const ext = cy.extent(), bb = el.boundingBox();
+    const visible = bb.x1 >= ext.x1 && bb.x2 <= ext.x2 && bb.y1 >= ext.y1 && bb.y2 <= ext.y2;
+    if (visible && cy.zoom() >= COMPACT_BELOW) return;
+    userMoved = true;
+    cy.animate({ center: { eles: el }, zoom: Math.max(cy.zoom(), 0.9) }, { duration: 250, complete: updateDetail });
   }
 
   function refreshPanel() {
@@ -285,15 +408,27 @@
     return n ? n.name : id;
   }
 
+  // The panel with nothing selected explains the current view: what it is
+  // (the repository at the top level, the focused box below it) and an
+  // outline of every box in it, so the diagram can be explored from a list.
   function summaryPanel() {
     const job = state.job;
     if (!job || !job.summary) {
-      return h('div', { class: 'panel-empty' }, 'Select a box or an arrow to see what it does and how it connects.');
+      return h('div', { class: 'panel-empty' }, job ? 'The overview appears here once the analysis is done.' : 'Analyze a repository and its overview appears here: size, languages and every box in the current view.');
     }
+    const focus = state.view && state.view.focus;
+    return h('div', {},
+      focus ? focusHeader(focus) : repoHeader(job),
+      outline(),
+      h('p', { class: 'hint' }, 'Hover a box to see what it talks to; click it for details. Double-click a box with ⊕ to zoom in, Backspace to zoom out.'),
+    );
+  }
+
+  function repoHeader(job) {
     const s = job.summary;
     const langs = Object.entries(s.languages || {}).sort((a, b) => b[1] - a[1]).slice(0, 8);
     return h('div', {},
-      h('span', { class: 'badge system' }, 'Analysis'),
+      h('span', { class: 'badge system' }, 'Repository'),
       h('h2', {}, s.name),
       h('div', { class: 'tech mono' }, job.remote || job.dir || job.source),
       h('h3', {}, 'Size'),
@@ -303,8 +438,45 @@
       h('h3', {}, 'Languages (files)'),
       h('div', { class: 'tags' }, langs.map(([l, n]) => h('span', { class: 'tag' }, `${l} ${n}`))),
       (s.warnings || []).length ? [h('h3', {}, 'Warnings'), h('ul', { class: 'list warnings' }, s.warnings.map((w) => h('li', {}, w)))] : null,
-      h('p', { class: 'panel-empty' }, 'Select a box or an arrow for details. Double-click a box with ⊕ to zoom in.'),
     );
+  }
+
+  function focusHeader(n) {
+    const details = n.details || {};
+    return h('div', {},
+      h('span', { class: `badge ${n.kind}` }, `Inside this ${(KIND_LABEL[n.kind] || n.kind).toLowerCase()}`),
+      h('h2', {}, n.name),
+      n.technology ? h('div', { class: 'tech' }, n.technology) : null,
+      n.description ? h('p', { class: 'desc' }, n.description, aiMark(details)) : null,
+      n.path ? h('div', { class: 'mono' }, n.path) : null,
+    );
+  }
+
+  function outline() {
+    const nodes = ((state.view && state.view.nodes) || []).filter((n) => cy.getElementById(n.id).length);
+    if (!nodes.length) return null;
+    const order = { person: 0, system: 1, container: 2, component: 3, file: 4, external: 5 };
+    const sorted = [...nodes].sort((a, b) => (!!a.context - !!b.context) || (order[a.kind] - order[b.kind]) || a.name.localeCompare(b.name));
+    const inside = sorted.filter((n) => !n.context && n.kind !== 'external' && n.kind !== 'person');
+    const around = sorted.filter((n) => n.context || n.kind === 'external' || n.kind === 'person');
+    const item = (n) => h('li', {
+      class: n.context ? 'context' : '', title: n.description || n.name,
+      onclick: () => select({ type: 'node', id: n.id }, { reveal: true }),
+    },
+    h('span', { class: `dot ${n.kind}` }),
+    h('span', { class: 'name' }, n.name, ' ', h('span', { class: 'sub' }, n.technology ? truncate(n.technology, 28) : (KIND_LABEL[n.kind] || n.kind))),
+    n.expandable ? h('button', {
+      class: 'zoom', title: `Zoom into ${n.name}`,
+      onclick: (ev) => { ev.stopPropagation(); zoomTo(n.id); },
+    }, `⊕ ${n.children}`) : h('span'));
+    return [
+      inside.length ? [h('h3', {}, `In this view (${inside.length})`), h('ul', { class: 'outline' }, inside.map(item))] : null,
+      around.length ? [h('h3', {}, `Around it (${around.length})`), h('ul', { class: 'outline' }, around.map(item))] : null,
+    ];
+  }
+
+  function aiMark(details) {
+    return details.ai ? h('span', { class: 'ai', title: 'Written by a local model' }, `✦ ${details.ai}`) : null;
   }
 
   function metric(v, label) { return h('div', { class: 'metric' }, h('b', {}, v), h('span', {}, label)); }
@@ -318,21 +490,31 @@
       n.context ? h('span', { class: 'ai' }, 'outside this view') : null,
       h('h2', {}, n.name),
       n.technology ? h('div', { class: 'tech' }, n.technology) : null,
-      n.description ? h('p', { class: 'desc' }, n.description, details.ai ? h('span', { class: 'ai', title: 'Written by a local model' }, `✦ ${details.ai}`) : null) : h('p', { class: 'desc panel-empty' }, 'No description.'),
-      details.doc ? h('p', { class: 'doc' }, details.doc) : null,
+      n.description ? h('p', { class: 'desc' }, n.description, aiMark(details)) : h('p', { class: 'desc panel-empty' }, 'No description.'),
+      details.doc && details.doc !== n.description ? h('p', { class: 'doc' }, h('span', { class: 'doc-label' }, 'From the code'), details.doc) : null,
       n.path ? h('div', { class: 'mono' }, n.path) : null,
       Object.keys(m).length ? [h('h3', {}, 'Metrics'), h('div', { class: 'metrics' }, Object.entries(m).map(([k, v]) => metric(v.toLocaleString(), k)))] : null,
       (n.tags || []).length ? [h('h3', {}, 'Tags'), h('div', { class: 'tags' }, n.tags.map((t) => h('span', { class: 'tag' }, t)))] : null,
       details.deploy ? [h('h3', {}, 'Deployment'), h('div', {}, details.deploy)] : null,
-      details.routes ? [h('h3', {}, 'HTTP routes served'), h('ul', { class: 'list mono' }, details.routes.split('\n').map((r) => h('li', {}, r)))] : null,
+      details.routes ? [h('h3', {}, `HTTP routes served (${details.routes.split('\n').length})`), collapsible('list mono', details.routes.split('\n').map((r) => h('li', {}, r)))] : null,
       details.symbols ? [h('h3', {}, 'Exported symbols'), h('div', { class: 'mono' }, details.symbols)] : null,
-      conns.length ? [h('h3', {}, 'Connections in this view'), h('ul', { class: 'list' }, conns.map((e) => connItem(e, n.id)))] : null,
+      conns.length ? [h('h3', {}, `Connections in this view (${conns.length})`), collapsible('list', conns.map((e) => connItem(e, n.id)))] : null,
       h('div', { class: 'actions' },
         n.expandable ? h('button', { class: 'primary', onclick: () => zoomTo(n.id) }, `Zoom in (${n.children})`) : null,
         n.context && n.parent !== undefined ? h('button', { onclick: () => zoomTo(n.parent || '') }, 'Go to its level') : null,
         h('button', { onclick: () => copy(referenceFor(n)) }, 'Copy reference'),
       ),
     );
+  }
+
+  // collapsible renders a list showing the first few items and a button to
+  // reveal the rest, so long route lists do not bury everything below.
+  function collapsible(cls, items, max = 8) {
+    const ul = h('ul', { class: cls }, items.slice(0, max));
+    if (items.length <= max) return ul;
+    const more = h('button', { class: 'more', onclick: () => { ul.append(...items.slice(max)); more.remove(); } },
+      `Show all ${items.length}`);
+    return [ul, more];
   }
 
   function connItem(e, selfId) {
@@ -352,7 +534,7 @@
       h('div', { class: 'tags' }, e.kinds.map((k) => h('span', { class: `conn-kind ${k}` }, k))),
       h('h3', {}, 'Strength'),
       h('div', {}, `${e.weight} underlying relationship${e.weight === 1 ? '' : 's'}`),
-      e.labels && e.labels.length ? [h('h3', {}, 'Details'), h('ul', { class: 'list mono' }, e.labels.map((l) => h('li', {}, l)))] : null,
+      e.labels && e.labels.length ? [h('h3', {}, 'Details'), collapsible('list mono', e.labels.map((l) => h('li', {}, l)))] : null,
       h('div', { class: 'actions' },
         h('button', { onclick: () => select({ type: 'node', id: e.from }) }, `Source: ${truncate(nameOf(e.from), 22)}`),
         h('button', { onclick: () => select({ type: 'node', id: e.to }) }, `Target: ${truncate(nameOf(e.to), 22)}`),
@@ -380,6 +562,24 @@
     el.replaceChildren(spinner ? h('span', { class: 'spinner' }) : '', text);
     el.hidden = false;
     if (ttl) statusTimer = setTimeout(() => { el.hidden = true; }, ttl);
+  }
+
+  // Before the first diagram exists, progress is shown as a card in the
+  // middle of the canvas; afterwards as the small status pill.
+  function showProgress(job) {
+    const remote = !!job.remote || /github/.test(job.source || '');
+    const steps = [
+      [remote ? 'Fetch the repository' : 'Open the repository', ['queued', 'resolving']],
+      ['Analyze the code', ['analyzing']],
+      ['Draw the diagram', []],
+    ];
+    const at = steps.findIndex(([, st]) => st.includes(job.status));
+    $('#empty').hidden = true;
+    $('#progress').hidden = false;
+    $('#progress-title').textContent = statusText(job) || 'Working…';
+    $('#progress-source').textContent = job.remote || job.dir || job.source || '';
+    $('#progress-steps').replaceChildren(...steps.map(([label], i) =>
+      h('li', { class: i < at ? 'done' : i === at ? 'now' : '' }, label)));
   }
 
   function statusText(job) {
@@ -414,6 +614,8 @@
     const job = state.job = await api.get(state.job.id).catch(() => state.job);
     if (job.dir || job.remote) $('#source').value = job.remote || job.dir;
     if (job.status === 'failed') {
+      $('#progress').hidden = true;
+      if (!state.view) $('#empty').hidden = false;
       showStatus(`Analysis failed: ${job.error}`, 'error');
       $('#analyze-btn').disabled = false;
       return;
@@ -436,7 +638,8 @@
       loadHistory();
       return;
     }
-    showStatus(statusText(job), 'info', 0, true);
+    if (state.view) showStatus(statusText(job), 'info', 0, true);
+    else { showStatus(''); showProgress(job); }
     state.pollTimer = setTimeout(() => poll(focus), job.status === 'enriching' ? POLL_MS * 2 : POLL_MS);
   }
 
@@ -445,7 +648,7 @@
     const source = $('#source').value.trim();
     if (!source) { $('#source').focus(); return; }
     $('#analyze-btn').disabled = true;
-    state.view = null;
+    clearDiagram();
     try {
       const job = await api.analyze(source);
       await openJob(job.id, '', { push: true });
@@ -454,6 +657,19 @@
       $('#analyze-btn').disabled = false;
     }
   });
+
+  document.querySelectorAll('[data-example]').forEach((b) => b.addEventListener('click', () => {
+    $('#source').value = b.dataset.example;
+    $('#analyze-form').requestSubmit();
+  }));
+
+  function clearDiagram() {
+    state.view = null;
+    state.selected = null;
+    state.viewVersion = '';
+    cy.elements().remove();
+    $('#zoom-hint').hidden = true;
+  }
 
   async function loadHistory() {
     const jobs = await api.list().catch(() => []);
@@ -464,7 +680,7 @@
   $('#history').addEventListener('change', (ev) => {
     const id = ev.target.value;
     ev.target.value = '';
-    if (id) { state.view = null; openJob(id, '', { push: true }); }
+    if (id) { clearDiagram(); openJob(id, '', { push: true }); }
   });
 
   // ---------- search (whole graph) ----------
@@ -482,12 +698,21 @@
     const hits = g.nodes.filter((n) => n.name.toLowerCase().includes(q) || (n.path || '').toLowerCase().includes(q)
       || (n.description || '').toLowerCase().includes(q)).slice(0, 30);
     searchActive = -1;
-    list.replaceChildren(...hits.map((n) => h('li', { onclick: () => jumpTo(n) },
-      h('span', {}, n.name), h('span', { class: 'k' }, `${KIND_LABEL[n.kind] || n.kind}${n.path ? ' · ' + n.path : ''}`))));
-    list.hidden = hits.length === 0;
+    list.replaceChildren(...hits.map((n) => h('li', { role: 'option', onclick: () => jumpTo(n) },
+      h('span', {}, highlight(n.name, q)),
+      h('span', { class: 'k' }, h('span', { class: `dot ${n.kind}` }), `${KIND_LABEL[n.kind] || n.kind}${n.path ? ' · ' + n.path : ''}`))));
+    if (!hits.length) list.replaceChildren(h('li', { class: 'none' }, `Nothing matches “${q}”`));
+    list.hidden = false;
   });
+  // highlight wraps the first match of q in <mark> (text nodes only).
+  function highlight(text, q) {
+    const i = text.toLowerCase().indexOf(q);
+    if (i < 0) return text;
+    return [text.slice(0, i), h('mark', {}, text.slice(i, i + q.length)), text.slice(i + q.length)];
+  }
+
   $('#search').addEventListener('keydown', (ev) => {
-    const items = [...$('#search-results').children];
+    const items = [...$('#search-results').children].filter((li) => !li.classList.contains('none'));
     if (!items.length) return;
     if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
       ev.preventDefault();
@@ -505,31 +730,41 @@
   async function jumpTo(n) {
     $('#search-results').hidden = true;
     $('#search').value = '';
+    $('#search').blur(); // hand the keyboard back to the diagram
     await zoomTo(n.parent || '');
     const el = cy.getElementById(n.id);
     if (el.length) {
-      select({ type: 'node', id: n.id });
+      select({ type: 'node', id: n.id }, { reveal: true });
       el.addClass('match');
-      cy.animate({ center: { eles: el }, zoom: Math.max(cy.zoom(), 1) }, { duration: 250 });
       setTimeout(() => el.removeClass('match'), 1600);
     }
   }
 
   // ---------- toolbar ----------
   $('#up').addEventListener('click', zoomOut);
-  $('#fit').addEventListener('click', () => cy.animate({ fit: { padding: 40 } }, { duration: 200 }));
-  $('#dir').addEventListener('click', (ev) => {
+  $('#fit').addEventListener('click', () => fit(true));
+  function toggleDir() {
     state.rankDir = state.rankDir === 'TB' ? 'LR' : 'TB';
-    ev.target.textContent = state.rankDir === 'TB' ? '↓ TB' : '→ LR';
-    layout(true);
-  });
-  $('#labels').addEventListener('click', (ev) => {
-    state.labels = !state.labels;
-    ev.target.setAttribute('aria-pressed', String(state.labels));
-    cy.style(stylesheet(colors()));
-  });
-  document.querySelectorAll('.seg input').forEach((cb) => cb.addEventListener('change', () => {
-    state.hiddenKinds = new Set([...document.querySelectorAll('.seg input[data-kind]')].filter((x) => !x.checked).map((x) => x.dataset.kind));
+    const lr = state.rankDir === 'LR';
+    $('#dir').classList.toggle('lr', lr);
+    $('#dir').title = `Layout: ${lr ? 'left to right' : 'top to bottom'} (D to switch)`;
+    if (cy.nodes().length) layout(true);
+  }
+  function toggleLabels() {
+    state.labels = !labelsOn(cy.edges().length);
+    syncLabelsButton();
+    cy.batch(() => cy.edges().forEach((e) => e.data('label', state.labels ? e.data('full') : '')));
+  }
+  function syncLabelsButton() {
+    const on = labelsOn(cy.edges().length);
+    $('#labels').setAttribute('aria-pressed', String(on));
+    $('#labels').title = `Relationship labels: ${on ? 'shown' : 'on hover'}${state.labels === null ? ' (automatic)' : ''} (L)`;
+  }
+  $('#dir').addEventListener('click', toggleDir);
+  $('#labels').addEventListener('click', toggleLabels);
+  $('#help').addEventListener('click', () => $('#help-dialog').showModal());
+  document.querySelectorAll('.chips input').forEach((cb) => cb.addEventListener('change', () => {
+    state.hiddenKinds = new Set([...document.querySelectorAll('.chips input[data-kind]')].filter((x) => !x.checked).map((x) => x.dataset.kind));
     state.showTests = $('#tests').checked;
     if (state.view) { state.viewVersion = ''; render(state.view); }
   }));
@@ -540,9 +775,14 @@
     a.click();
   });
   document.addEventListener('keydown', (ev) => {
-    if (ev.target.closest('input, select, textarea')) return;
-    if (ev.key === 'Backspace' || ev.key === 'Escape') { ev.preventDefault(); if (state.selected) select(null); else zoomOut(); }
-    if (ev.key === 'f' || ev.key === 'F') cy.animate({ fit: { padding: 40 } }, { duration: 200 });
+    if (ev.target.closest('input, select, textarea, dialog')) return;
+    if (ev.key === 'Escape') { if (state.selected) select(null); return; }
+    if (ev.key === 'Backspace') { ev.preventDefault(); zoomOut(); return; }
+    if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    if (ev.key === 'f' || ev.key === 'F') fit(true);
+    if (ev.key === 'l' || ev.key === 'L') toggleLabels();
+    if (ev.key === 'd' || ev.key === 'D') toggleDir();
+    if (ev.key === '?') $('#help-dialog').showModal();
     if (ev.key === 'Enter' && state.selected && state.selected.type === 'node') {
       const n = cy.getElementById(state.selected.id).data('raw');
       if (n && n.expandable) zoomTo(n.id);

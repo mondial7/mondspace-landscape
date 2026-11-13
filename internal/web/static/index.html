@@ -7,7 +7,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='12' height='12' rx='3' fill='%233b6fd8'/%3E%3Crect x='18' y='2' width='12' height='12' rx='3' fill='%2370a0f5'/%3E%3Crect x='10' y='18' width='12' height='12' rx='3' fill='%23e8933a'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/static/app.css">
 </head>
-<body>
+<body class="no-view">
   <header class="topbar">
     <div class="brand" title="mondspace landscape">
       <span class="brand-mark" aria-hidden="true"></span>
@@ -24,26 +24,40 @@
   </header>
 
   <nav class="toolbar" aria-label="Diagram navigation">
-    <button id="up" class="icon" title="Zoom out a level (Backspace)" aria-label="Zoom out a level">↑</button>
+    <button id="up" class="icon" title="Zoom out a level (Backspace)" aria-label="Zoom out a level">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg>
+    </button>
     <ol id="crumbs" class="crumbs"></ol>
     <span id="level" class="level"></span>
     <span class="spacer"></span>
     <div class="search">
-      <input id="search" type="search" placeholder="Find anything…" aria-label="Find a node" autocomplete="off">
-      <ul id="search-results" class="search-results" hidden></ul>
+      <svg class="search-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+      <input id="search" type="search" placeholder="Find anything" aria-label="Find a box anywhere in the model" autocomplete="off">
+      <kbd class="search-key" aria-hidden="true">/</kbd>
+      <ul id="search-results" class="search-results" role="listbox" hidden></ul>
     </div>
-    <div class="seg" role="group" aria-label="Edge filter">
-      <label><input type="checkbox" data-kind="depends" checked> code</label>
-      <label><input type="checkbox" data-kind="http" checked> http</label>
-      <label><input type="checkbox" data-kind="data" checked> data</label>
-      <label><input type="checkbox" data-kind="uses" checked> uses</label>
-      <label><input type="checkbox" data-kind="runtime" checked> runtime</label>
-      <label title="Show test code"><input type="checkbox" id="tests"> tests</label>
+    <div class="chips" role="group" aria-label="Show relationships">
+      <label class="chip" data-kind="depends" title="Code dependencies: imports, embeds, type references"><input type="checkbox" data-kind="depends" checked><i></i>code</label>
+      <label class="chip" data-kind="http" title="HTTP calls matched to the routes that serve them"><input type="checkbox" data-kind="http" checked><i></i>http</label>
+      <label class="chip" data-kind="data" title="Reads and writes to data stores"><input type="checkbox" data-kind="data" checked><i></i>data</label>
+      <label class="chip" data-kind="uses" title="People, processes and platform services"><input type="checkbox" data-kind="uses" checked><i></i>uses</label>
+      <label class="chip" data-kind="runtime" title="Deployment: Dockerfile, compose, fly.toml"><input type="checkbox" data-kind="runtime" checked><i></i>runtime</label>
+      <label class="chip chip-tests" title="Show test code"><input type="checkbox" id="tests">tests</label>
     </div>
-    <button id="labels" class="toggle" aria-pressed="true" title="Show relationship labels">Labels</button>
-    <button id="dir" class="toggle" title="Toggle layout direction">↓ TB</button>
-    <button id="fit" class="icon" title="Fit to screen (F)" aria-label="Fit to screen">⤢</button>
-    <button id="png" class="icon" title="Download PNG" aria-label="Download PNG">⇩</button>
+    <span class="tb-sep" aria-hidden="true"></span>
+    <button id="labels" class="icon toggle" aria-pressed="true" title="Relationship labels (L)" aria-label="Relationship labels">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12M2 8h8M2 12h10"/></svg>
+    </button>
+    <button id="dir" class="icon" title="Layout: top to bottom (D to switch)" aria-label="Switch layout direction">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="1.5" width="6" height="4" rx="1"/><rect x="5" y="10.5" width="6" height="4" rx="1"/><path d="M8 5.5v5"/></svg>
+    </button>
+    <button id="fit" class="icon" title="Fit to screen (F)" aria-label="Fit to screen">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+    </button>
+    <button id="png" class="icon" title="Download this view as PNG" aria-label="Download PNG">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11"/></svg>
+    </button>
+    <button id="help" class="icon" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
   </nav>
 
   <main class="workspace">
@@ -53,13 +67,27 @@
         <h1>See your software as a landscape</h1>
         <p>Paste a public GitHub repository or a local path above. The code is analyzed with fast static analysis,
            then a local model (Ollama or LM Studio) writes short descriptions. Nothing leaves your machine.</p>
+        <div class="examples">
+          <span>Try</span>
+          <button type="button" data-example="github.com/charmbracelet/glow">charmbracelet/glow</button>
+          <button type="button" data-example="github.com/fastapi/full-stack-fastapi-template">fastapi/full-stack-fastapi-template</button>
+          <button type="button" data-example="github.com/mondial7/mondspace-landscape">mondspace-landscape itself</button>
+        </div>
         <ul class="howto">
           <li><b>Double-click</b> a box to zoom into it</li>
-          <li><b>Backspace</b> or the breadcrumb to zoom out</li>
-          <li><b>Click</b> a box or an arrow for details</li>
+          <li><kbd>Backspace</kbd> to zoom out</li>
+          <li><b>Click</b> for details</li>
+          <li><kbd>/</kbd> find, <kbd>?</kbd> shortcuts</li>
         </ul>
       </div>
+      <div id="progress" class="progress" hidden aria-live="polite">
+        <div class="spinner big"></div>
+        <h2 id="progress-title">Opening repository…</h2>
+        <div id="progress-source" class="mono"></div>
+        <ol id="progress-steps" class="steps"></ol>
+      </div>
       <div id="status" class="status" hidden></div>
+      <div id="zoom-hint" class="zoom-hint" hidden>Zoomed out: names only. Zoom in or hover for details.</div>
       <div class="legend" id="legend">
         <span class="lg person">Person</span>
         <span class="lg system">System</span>
@@ -67,21 +95,32 @@
         <span class="lg component">Component</span>
         <span class="lg file">File</span>
         <span class="lg external">External</span>
-        <span class="lg-sep"></span>
-        <span class="le depends">code</span>
-        <span class="le http">http</span>
-        <span class="le data">data</span>
-        <span class="le uses">uses</span>
-        <span class="le runtime">runtime</span>
       </div>
     </section>
     <aside id="panel" class="panel" aria-live="polite">
-      <div class="panel-empty">Select a box or an arrow to see what it does and how it connects.</div>
+      <div class="panel-empty">Analyze a repository and its overview appears here: size, languages and every box in the current view.</div>
     </aside>
   </main>
 
+  <dialog id="help-dialog" class="help">
+    <h2>Shortcuts</h2>
+    <dl>
+      <dt><kbd>double-click</kbd> <kbd>Enter</kbd></dt><dd>zoom into the selected box (⊕)</dd>
+      <dt><kbd>Backspace</kbd></dt><dd>zoom out a level</dd>
+      <dt><kbd>Esc</kbd></dt><dd>clear the selection</dd>
+      <dt><kbd>/</kbd></dt><dd>find anything in the whole model</dd>
+      <dt><kbd>F</kbd></dt><dd>fit the diagram to the screen</dd>
+      <dt><kbd>L</kbd></dt><dd>show or hide relationship labels</dd>
+      <dt><kbd>D</kbd></dt><dd>switch layout direction</dd>
+      <dt><kbd>?</kbd></dt><dd>this help</dd>
+    </dl>
+    <p>Hover a box to highlight what it talks to. Every view has its own URL, so the back button works and you can share the exact level you are discussing.</p>
+    <form method="dialog"><button class="primary">Got it</button></form>
+  </dialog>
+
   <script src="/static/vendor/cytoscape.min.js"></script>
   <script src="/static/vendor/cytoscape-dagre.min.js"></script>
+  <script src="/static/layout.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

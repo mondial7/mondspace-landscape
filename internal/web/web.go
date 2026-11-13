@@ -5,13 +5,22 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"os"
 )
 
 //go:embed static
 var assets embed.FS
 
+// DevDirEnv names an environment variable that, when set to a directory
+// (normally internal/web/static), serves the UI from disk instead of the
+// embedded copy, so UI changes show up on reload without rebuilding.
+const DevDirEnv = "LANDSCAPE_WEB_DIR"
+
 // FS returns the UI files rooted at the static directory.
 func FS() fs.FS {
+	if dir := os.Getenv(DevDirEnv); dir != "" {
+		return os.DirFS(dir)
+	}
 	sub, err := fs.Sub(assets, "static")
 	if err != nil {
 		panic(err) // the embed directive guarantees the directory exists

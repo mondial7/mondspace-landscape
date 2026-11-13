@@ -125,3 +125,30 @@ func TestBadArgs(t *testing.T) {
 		t.Errorf("--version = %q, %v", out.String(), err)
 	}
 }
+
+func TestFlagsAfterPositionalArguments(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		wantServe bool
+		wantSrc   string
+		wantPort  int
+	}{
+		{"flags before", []string{"--port", "9000", "serve"}, true, "", 9000},
+		{"flags after serve", []string{"serve", "--port", "9000", "--no-open"}, true, "", 9000},
+		{"flags after path", []string{"../repo", "--port=9001"}, false, "../repo", 9001},
+		{"flags around path", []string{"--no-open", "../repo", "--port", "9002"}, false, "../repo", 9002},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o, err := parse(tt.args, io.Discard)
+			if err != nil {
+				t.Fatalf("parse(%q) error: %v", tt.args, err)
+			}
+			if o.serveOnly != tt.wantServe || o.sourceTarget != tt.wantSrc || o.port != tt.wantPort {
+				t.Errorf("parse(%q) = serve %v, source %q, port %d; want %v, %q, %d",
+					tt.args, o.serveOnly, o.sourceTarget, o.port, tt.wantServe, tt.wantSrc, tt.wantPort)
+			}
+		})
+	}
+}

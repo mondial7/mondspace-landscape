@@ -65,11 +65,19 @@ In the browser:
 
 | Action | How |
 | --- | --- |
-| Zoom into a box (⊕ marks boxes with content) | double-click, or select + <kbd>Enter</kbd> |
+| Zoom into a box (⊕ marks boxes with content) | double-click, <kbd>Enter</kbd> on a selected box, or ⊕ in the side panel |
 | Zoom out | <kbd>Backspace</kbd>, the ↑ button or the breadcrumb |
-| Details, connections, routes, SQL tables | click a box or an arrow |
+| See what a box talks to | hover it |
+| Details, connections, routes, SQL tables | click a box or an arrow (<kbd>Esc</kbd> clears) |
+| Browse every box in the current view | the side panel, when nothing is selected |
 | Find anything in the whole model | <kbd>/</kbd> |
-| Filter relationship kinds, show tests, flip layout, export PNG | toolbar |
+| Show/hide relationship kinds and tests | the coloured chips in the toolbar (they double as the legend) |
+| Relationship labels, layout direction, fit | <kbd>L</kbd>, <kbd>D</kbd>, <kbd>F</kbd> (or the toolbar) |
+| All shortcuts | <kbd>?</kbd> |
+
+Large views stay readable: very wide rows of boxes are folded to the shape of your screen,
+zoomed-out boxes show just their names, and on busy views relationship labels appear on
+hover and selection.
 
 Every view has its own URL (`#/a/<analysis>/<node>`), so the browser's back button works and
 you can point a colleague at the exact level you are discussing.
@@ -165,8 +173,9 @@ you can point a colleague at the exact level you are discussing.
 The project is built test-first; every package has its tests next to it.
 
 ```sh
-make test          # go test ./... -race
+make test          # go test ./... -race, plus the UI's JavaScript tests (node --test)
 make run           # analyze this repo and open the UI
+make ui            # same, but serve the UI from disk: edit internal/web/static and reload
 make screenshots   # regenerate the README/Pages images with the tool itself (needs Chrome)
 make help          # everything else
 ```

@@ -28,6 +28,11 @@ jobs:
           cache: true
       - run: go vet ./...
       - run: go test ./... -race
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: UI unit tests
+        run: node --test 'internal/web/jstest/*.test.mjs'
       - name: Check formatting
         run: |
           unformatted=$(gofmt -s -l .)
