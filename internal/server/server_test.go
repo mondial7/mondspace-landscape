@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -240,5 +241,31 @@ func TestConfigEndpoint(t *testing.T) {
 	cfg := decode[map[string]string](t, do(t, h, "GET", "/api/config", ""))
 	if cfg["llm"] != "fake/model" || cfg["initial"] == "" {
 		t.Errorf("config = %v, want llm and initial job id", cfg)
+	}
+}
+
+// homeResolver resolves everything to a directory inside $HOME.
+type homeResolver struct{ home string }
+
+func (r homeResolver) Resolve(_ context.Context, in string) (source.Repo, error) {
+	name := filepath.Base(in)
+	return source.Repo{Dir: filepath.Join(r.home, "code", name), Name: name}, nil
+}
+
+func TestJobsDoNotRevealHomeDirectory(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	h := newTestServer(t, func(c *Config) { c.Resolver = homeResolver{home} })
+	rec := do(t, h, "POST", "/api/analyses", `{"source":"`+home+`/code/demo"}`)
+	j := decode[Job](t, rec)
+	if j.Source != "~/code/demo" {
+		t.Errorf("source = %q, want ~/code/demo", j.Source)
+	}
+	done := waitFor(t, h, j.ID, StatusReady)
+	if done.Dir != "~/code/demo" {
+		t.Errorf("dir = %q, want ~/code/demo", done.Dir)
+	}
+	if body := do(t, h, "GET", "/api/analyses", "").Body.String(); strings.Contains(body, home) {
+		t.Errorf("job list reveals the home directory: %s", body)
 	}
 }

@@ -87,7 +87,7 @@ func (r *Resolver) Resolve(ctx context.Context, input string) (Repo, error) {
 	if input == "" {
 		input = "."
 	}
-	dir, err := filepath.Abs(input)
+	dir, err := filepath.Abs(expandHome(input))
 	if err != nil {
 		return Repo{}, err
 	}
@@ -99,6 +99,35 @@ func (r *Resolver) Resolve(ctx context.Context, input string) (Repo, error) {
 		return Repo{}, fmt.Errorf("%s is not a directory", input)
 	}
 	return Repo{Dir: dir, Name: filepath.Base(dir)}, nil
+}
+
+// Display returns path with the user's home directory shown as "~", so
+// paths the UI shows (and screenshots of it) do not reveal the username.
+// Anything outside the home directory is returned unchanged.
+func Display(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" || path == "" {
+		return path
+	}
+	if path == home {
+		return "~"
+	}
+	if rest, ok := strings.CutPrefix(path, home+string(filepath.Separator)); ok {
+		return filepath.Join("~", rest)
+	}
+	return path
+}
+
+// expandHome undoes Display: "~" and "~/..." become paths under the home directory.
+func expandHome(path string) string {
+	if path != "~" && !strings.HasPrefix(path, "~/") && !strings.HasPrefix(path, "~"+string(filepath.Separator)) {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	return filepath.Join(home, path[1:])
 }
 
 func (r *Resolver) github(ctx context.Context, gh GitHub) (Repo, error) {

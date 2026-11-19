@@ -164,3 +164,41 @@ func TestGitCLI(t *testing.T) {
 		t.Fatalf("update did not fetch new commit: %v", err)
 	}
 }
+
+func TestDisplayHidesHomeDirectory(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	tests := []struct{ in, want string }{
+		{home, "~"},
+		{filepath.Join(home, "code", "app"), filepath.Join("~", "code", "app")},
+		{home + "other/app", home + "other/app"}, // a sibling sharing the prefix is not inside home
+		{"/srv/app", "/srv/app"},
+		{"github.com/owner/repo", "github.com/owner/repo"},
+		{".", "."},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := Display(tt.in); got != tt.want {
+			t.Errorf("Display(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestResolveExpandsTilde(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	app := filepath.Join(home, "app")
+	if err := os.Mkdir(app, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := NewResolver(t.TempDir(), nil)
+	for in, want := range map[string]string{"~/app": app, "~": home} {
+		repo, err := r.Resolve(context.Background(), in)
+		if err != nil {
+			t.Fatalf("Resolve(%q): %v", in, err)
+		}
+		if repo.Dir != want {
+			t.Errorf("Resolve(%q).Dir = %q, want %q", in, repo.Dir, want)
+		}
+	}
+}

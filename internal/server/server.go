@@ -82,6 +82,7 @@ type Job struct {
 
 type job struct {
 	mu    sync.RWMutex // guards info and model (including graph writes)
+	src   string       // the source as the user gave it
 	info  Job
 	model *landscape.Model
 }
@@ -130,7 +131,8 @@ func (s *Server) InitialID() string { return s.initial }
 
 // Start begins analysing src in the background and returns the new job.
 func (s *Server) Start(src string) Job {
-	j := &job{info: Job{ID: newID(), Source: src, Status: StatusQueued, Started: time.Now()}}
+	// The public Source and Dir show the home directory as "~"; src keeps the input as given.
+	j := &job{src: src, info: Job{ID: newID(), Source: source.Display(src), Status: StatusQueued, Started: time.Now()}}
 	s.mu.Lock()
 	s.jobs[j.info.ID] = j
 	s.order = append(s.order, j.info.ID)
@@ -149,12 +151,12 @@ func (s *Server) run(j *job) {
 	}
 
 	j.update(func(i *Job) { i.Status = StatusResolving })
-	repo, err := s.cfg.Resolver.Resolve(ctx, j.info.Source)
+	repo, err := s.cfg.Resolver.Resolve(ctx, j.src)
 	if err != nil {
 		fail(err)
 		return
 	}
-	j.update(func(i *Job) { i.Status, i.Remote, i.Dir = StatusAnalyzing, repo.Remote, repo.Dir })
+	j.update(func(i *Job) { i.Status, i.Remote, i.Dir = StatusAnalyzing, repo.Remote, source.Display(repo.Dir) })
 	fsys := s.cfg.OpenFS(repo.Dir)
 	m, err := s.cfg.Analyzer.Run(ctx, fsys, repo.Name)
 	if err != nil {
