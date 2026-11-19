@@ -30,18 +30,14 @@ for _ in $(seq 1 240); do
   sleep 2
 done
 
-shoot() { # name focus scheme(dark|light)
-  local flag=()
-  [ "$3" = light ] && flag=(--blink-settings=preferredColorScheme=1) || flag=(--force-dark-mode --blink-settings=preferredColorScheme=0)
+shoot() { # name focus — the UI is dark-only, so one capture per view
   "$CHROME" --headless=new --disable-gpu --hide-scrollbars --window-size=1600,1000 \
-    --virtual-time-budget=6000 --user-data-dir="$TMP/chrome" "${flag[@]}" \
-    --screenshot="$OUT/$1-$3.png" "http://127.0.0.1:$PORT/#/a/$ID${2:+/$2}" >/dev/null 2>&1
-  echo "  $OUT/$1-$3.png"
+    --virtual-time-budget=6000 --user-data-dir="$TMP/chrome" \
+    --screenshot="$OUT/$1.png" "http://127.0.0.1:$PORT/#/a/$ID${2:+/$2}" >/dev/null 2>&1
+  echo "  $OUT/$1.png"
 }
 
-for scheme in dark light; do
-  shoot context "" "$scheme"
-  shoot containers "sys" "$scheme"
-  shoot components "ctr%3Acmd%2Flandscape" "$scheme"
-  shoot code "cmp%3Ainternal%2Flandscape" "$scheme"
-done
+shoot context ""
+shoot containers "sys"
+shoot components "ctr%3Acmd%2Flandscape"
+shoot code "cmp%3Ainternal%2Flandscape"

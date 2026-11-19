@@ -79,7 +79,7 @@
     const cs = getComputedStyle(document.documentElement);
     const v = (n) => cs.getPropertyValue(n).trim();
     return {
-      text: v('--text'), muted: v('--muted'), surface: v('--surface'), border: v('--border'),
+      text: v('--text'), muted: v('--muted'), surface: v('--surface'), border: v('--border'), bg: v('--bg'),
       person: v('--n-person'), system: v('--n-system'), container: v('--n-container'),
       component: v('--n-component'), file: v('--n-file'), fileText: v('--n-file-text'),
       external: v('--n-external'), nodeText: v('--n-text'), accent: v('--accent'),
@@ -93,7 +93,7 @@
         shape: 'round-rectangle', 'background-color': (n) => c[n.data('kind')] || c.container,
         width: 'data(w)', height: 'data(h)',
         label: 'data(label)', color: (n) => n.data('kind') === 'file' ? c.fileText : c.nodeText,
-        'font-family': 'ui-sans-serif, -apple-system, Segoe UI, Inter, sans-serif',
+        'font-family': '-apple-system, BlinkMacSystemFont, Segoe UI, Inter, system-ui, sans-serif',
         'font-size': 11, 'text-wrap': 'wrap', 'text-max-width': (n) => n.data('w') - 22,
         'text-valign': 'center', 'text-halign': 'center', 'line-height': 1.3,
         'border-width': 0, 'corner-radius': 10,
@@ -103,7 +103,7 @@
       { selector: 'node[kind = "system"]', style: { 'corner-radius': 14 } },
       { selector: 'node[kind = "component"]', style: { 'corner-radius': 3 } },
       { selector: 'node[kind = "file"]', style: { shape: 'cut-rectangle', 'corner-radius': 0 } },
-      { selector: 'node[kind = "external"]', style: { 'border-width': 1.5, 'border-style': 'dashed', 'border-color': c.surface } },
+      { selector: 'node[kind = "external"]', style: { 'border-width': 1.5, 'border-style': 'dashed', 'border-color': c.muted } },
       { selector: 'node.context', style: { opacity: 0.78, 'border-width': 2, 'border-style': 'dashed', 'border-color': c.muted } },
       { selector: 'node.expandable', style: { 'border-width': 3, 'border-color': c.accent, 'border-style': 'double' } },
       { selector: 'node.context.expandable', style: { 'border-style': 'dashed', 'border-width': 2 } },
@@ -131,7 +131,7 @@
         width: 'data(width)', 'curve-style': 'bezier', 'line-color': (e) => c[e.data('kind')] || c.depends,
         'target-arrow-color': (e) => c[e.data('kind')] || c.depends, 'target-arrow-shape': 'triangle', 'arrow-scale': 0.9,
         label: 'data(label)', 'font-size': 10, 'min-zoomed-font-size': 6.5, color: c.muted,
-        'text-background-color': c.surface, 'text-background-opacity': 0.9, 'text-background-padding': 2,
+        'text-background-color': c.bg, 'text-background-opacity': 0.9, 'text-background-padding': 2,
         'text-background-shape': 'roundrectangle', 'text-wrap': 'wrap', 'text-max-width': 180,
         'text-rotation': 'none',
       } },
@@ -185,7 +185,6 @@
     cy.resize();
     if (!userMoved && cy.nodes().length) fit(false);
   }).observe($('#cy'));
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => cy.style(stylesheet(colors())));
 
   function truncate(s, n) { return !s ? '' : (s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s); }
 

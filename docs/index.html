@@ -5,52 +5,52 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mondspace Landscape</title>
   <meta name="description" content="Turn any codebase into a zoomable, C4-style architecture map — analyzed locally, explained by a local model.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='12' height='12' rx='3' fill='%233b6fd8'/%3E%3Crect x='18' y='2' width='12' height='12' rx='3' fill='%2370a0f5'/%3E%3Crect x='10' y='18' width='12' height='12' rx='3' fill='%23e8933a'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='12' height='12' rx='3' fill='%234dd4ac'/%3E%3Crect x='18' y='2' width='12' height='12' rx='3' fill='%2358a6ff'/%3E%3Crect x='10' y='18' width='12' height='12' rx='3' fill='%23f0a04b'/%3E%3C/svg%3E">
   <style>
     :root {
-      --bg: #f6f7f9; --surface: #fff; --border: #dde1e7; --text: #1c2330; --muted: #5d6878;
-      --accent: #3b6fd8; --accent-2: #e8933a; --code: #f0f2f5;
-      --font: ui-sans-serif, -apple-system, "Segoe UI", Inter, Roboto, sans-serif;
-      --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root:not([data-theme="light"]) {
-        --bg: #11151c; --surface: #181d26; --border: #2c3442; --text: #e6e9ef; --muted: #98a2b3;
-        --accent: #6d9bf1; --code: #202633;
-      }
+      --bg: #0d1117; --surface: #151b23; --hover: #1c2530; --border: #262d38; --line-soft: #1d232c;
+      --text: #e6edf3; --muted: #8b98a8; --faint: #5d6b7d;
+      --accent: #4dd4ac; --accent-dim: #1f6f5c; --warm: #f0a04b; --blue: #58a6ff; --code: #0a0e14;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+      --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      color-scheme: dark;
     }
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 var(--font); }
-    a { color: var(--accent); }
+    a { color: var(--blue); }
     .wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
     header { padding: 72px 0 32px; text-align: center; }
-    .mark { width: 44px; height: 44px; border-radius: 12px; margin: 0 auto 18px;
-      background: conic-gradient(from 200deg, #1d4f9c, #6d9bf1, var(--accent-2), #1d4f9c); }
-    h1 { font-size: clamp(30px, 5vw, 48px); letter-spacing: -.03em; line-height: 1.1; margin: 0 0 14px; }
+    .mark { width: 16px; height: 16px; border-radius: 50%; margin: 0 auto 26px;
+      background: var(--accent); box-shadow: 0 0 0 8px rgba(77, 212, 172, .14), 0 0 40px rgba(77, 212, 172, .35); }
+    h1 { font-size: clamp(30px, 5vw, 48px); letter-spacing: -.02em; line-height: 1.1; margin: 0 0 14px; }
     .lede { font-size: 19px; color: var(--muted); max-width: 680px; margin: 0 auto 26px; }
     .badge { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px;
-      border: 1px solid var(--border); color: var(--muted); margin-bottom: 16px; }
+      color: var(--accent); background: rgba(77, 212, 172, .1); border: 1px solid rgba(77, 212, 172, .3); margin-bottom: 16px; }
     .install { display: inline-flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; }
     pre, code { font-family: var(--mono); }
     .cmd { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 16px;
       font-size: 14px; overflow-x: auto; max-width: 100%; }
-    .btn { display: inline-block; padding: 10px 18px; border-radius: 10px; background: var(--accent); color: #fff;
-      text-decoration: none; font-weight: 600; }
-    .btn.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+    .btn { display: inline-block; padding: 10px 18px; border-radius: 10px; text-decoration: none; font-weight: 600;
+      color: var(--accent); background: rgba(77, 212, 172, .12); border: 1px solid rgba(77, 212, 172, .3); }
+    .btn:hover { background: rgba(77, 212, 172, .2); }
+    .btn.secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+    .btn.secondary:hover { background: var(--hover); }
     figure { margin: 28px 0 0; }
     figure img { width: 100%; height: auto; display: block; border-radius: 14px; border: 1px solid var(--border);
-      box-shadow: 0 2px 6px rgba(20,30,50,.06), 0 20px 50px rgba(20,30,50,.10); }
-    figcaption { text-align: center; color: var(--muted); font-size: 14px; margin-top: 10px; }
+      box-shadow: 0 30px 80px rgba(0, 0, 0, .6); }
+    figcaption { text-align: center; color: var(--faint); font-size: 14px; margin-top: 10px; }
     section { padding: 56px 0 8px; }
     h2 { font-size: 26px; letter-spacing: -.02em; margin: 0 0 18px; }
+    h2::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin: 0 12px 4px 0; vertical-align: middle; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
+    .card:hover { border-color: var(--accent-dim); }
     .card h3 { margin: 0 0 6px; font-size: 16px; }
     .card p { margin: 0; color: var(--muted); font-size: 15px; }
     .levels { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
     .levels figure { margin: 0; }
-    pre.block { background: var(--code); border-radius: 12px; padding: 16px; overflow-x: auto; font-size: 14px; }
-    footer { padding: 48px 0 64px; color: var(--muted); font-size: 14px; text-align: center; }
+    pre.block { background: var(--code); border: 1px solid var(--line-soft); border-radius: 10px; padding: 16px; overflow-x: auto; font-size: 14px; }
+    footer { padding: 48px 0 64px; color: var(--faint); border-top: 1px solid var(--line-soft); margin-top: 48px; font-size: 14px; text-align: center; }
   </style>
 </head>
 <body>
@@ -66,11 +66,8 @@
       <a class="btn secondary" href="https://github.com/mondial7/mondspace-landscape/releases">Releases</a>
     </div>
     <figure>
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="images/components-dark.png">
-        <img src="images/components-light.png" width="1600" height="1000"
+      <img src="images/components.png" width="1600" height="1000"
              alt="landscape showing the components of its own source code and how they depend on each other">
-      </picture>
       <figcaption>landscape analyzing its own repository. Every image on this page is generated by the tool itself.</figcaption>
     </figure>
   </header>
@@ -90,23 +87,19 @@
       <h2>Zoom from the big picture to a single file</h2>
       <div class="levels">
         <figure>
-          <picture><source media="(prefers-color-scheme: dark)" srcset="images/context-dark.png">
-            <img src="images/context-light.png" width="1600" height="1000" alt="Context level: users, the system and external systems" loading="lazy"></picture>
+          <img src="images/context.png" width="1600" height="1000" alt="Context level: users, the system and external systems" loading="lazy">
           <figcaption>Context — who uses it and what it talks to</figcaption>
         </figure>
         <figure>
-          <picture><source media="(prefers-color-scheme: dark)" srcset="images/containers-dark.png">
-            <img src="images/containers-light.png" width="1600" height="1000" alt="Containers level: the runnable parts of the system" loading="lazy"></picture>
+          <img src="images/containers.png" width="1600" height="1000" alt="Containers level: the runnable parts of the system" loading="lazy">
           <figcaption>Containers — the parts you run and deploy</figcaption>
         </figure>
         <figure>
-          <picture><source media="(prefers-color-scheme: dark)" srcset="images/components-dark.png">
-            <img src="images/components-light.png" width="1600" height="1000" alt="Components level: packages and their dependencies" loading="lazy"></picture>
+          <img src="images/components.png" width="1600" height="1000" alt="Components level: packages and their dependencies" loading="lazy">
           <figcaption>Components — packages, flows and data</figcaption>
         </figure>
         <figure>
-          <picture><source media="(prefers-color-scheme: dark)" srcset="images/code-dark.png">
-            <img src="images/code-light.png" width="1600" height="1000" alt="Code level: a file and the components it depends on" loading="lazy"></picture>
+          <img src="images/code.png" width="1600" height="1000" alt="Code level: a file and the components it depends on" loading="lazy">
           <figcaption>Code — files and what they reach</figcaption>
         </figure>
       </div>
