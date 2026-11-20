@@ -2,10 +2,13 @@ package script
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/mondial7/mondspace-landscape/internal/analyze"
 	"github.com/mondial7/mondspace-landscape/internal/scan"
@@ -13,15 +16,23 @@ import (
 
 func run(t *testing.T, a analyze.Analyzer, fsys fstest.MapFS) analyze.Facts {
 	t.Helper()
+	f, _ := timedRun(t, a, fsys)
+	return f
+}
+
+// timedRun is run that also reports how long Analyze (not the scan) took.
+func timedRun(t *testing.T, a analyze.Analyzer, fsys fstest.MapFS) (analyze.Facts, time.Duration) {
+	t.Helper()
 	repo, err := scan.Scan(fsys, "demo")
 	if err != nil {
 		t.Fatal(err)
 	}
+	start := time.Now()
 	f, err := a.Analyze(context.Background(), repo)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return f
+	return f, time.Since(start)
 }
 
 func unitByID(t *testing.T, f analyze.Facts, id string) analyze.Unit {
@@ -232,5 +243,67 @@ func TestScriptDepsRecordTheImportingFile(t *testing.T) {
 	want := []string{"web/a.js:js:web->js:lib", "web/b.js:js:web->js:lib"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("deps = %v, want %v", got, want)
+	}
+}
+
+func TestJSFetchMethodStaysInsideTheCall(t *testing.T) {
+	fsys := fstest.MapFS{
+		"web/api.js": {Data: []byte("fetch('/a', {method: 'POST'})\n" +
+			"fetch('/b', {\n  headers: {},\n  method: \"delete\",\n})\n" +
+			"fetch('/c')\nconst o = {method: 'PUT'}\n" +
+			"fetch('/d'\n" + strings.Repeat(" ", 1024) + "method: 'PATCH'\n")},
+	}
+	want := []string{"web/api.js  /c", "web/api.js  /d", "web/api.js DELETE /b", "web/api.js POST /a"}
+	if got := callStrings(run(t, NewJS(), fsys)); !reflect.DeepEqual(got, want) {
+		t.Errorf("calls = %q, want %q", got, want)
+	}
+}
+
+// Unclosed fetch( calls must not make the scan quadratic in file size.
+func TestJSFetchScanIsLinear(t *testing.T) {
+	n := 95_000 // just under scan.MaxFileSize
+	if raceEnabled {
+		n = 5_000
+	}
+	fsys := fstest.MapFS{"web/big.js": {Data: []byte(strings.Repeat("fetch('/a'\n", n))}}
+	f, d := timedRun(t, NewJS(), fsys)
+	if d > time.Second && !raceEnabled {
+		t.Errorf("1 MB of unclosed fetch calls took %v", d)
+	}
+	if len(f.Calls) != n {
+		t.Errorf("calls = %d, want %d", len(f.Calls), n)
+	}
+}
+
+func TestJSRelativeImportsResolve(t *testing.T) {
+	fsys := fstest.MapFS{
+		"a/main.js":       {Data: []byte("import x from './x'\nimport y from '../b/y'\nimport y2 from '../b/y'\nimport c from '../c'\nimport e from './x.js'\nimport n from '../b/none'\nimport z from '../b/y.test'\n")},
+		"a/x.test.js":     {Data: []byte("")},
+		"b/y.ts":          {Data: []byte("")},
+		"b/y.test.helper": {Data: []byte("")},
+		"c/index.js":      {Data: []byte("")},
+	}
+	want := []string{"js:a->js:b", "js:a->js:c"}
+	if got := depStrings(run(t, NewJS(), fsys)); !reflect.DeepEqual(got, want) {
+		t.Errorf("deps = %v, want %v", got, want)
+	}
+}
+
+// Relative imports must not cost a scan of every repository file each.
+func TestJSRelativeImportsScale(t *testing.T) {
+	fsys := fstest.MapFS{}
+	var imports strings.Builder
+	for i := 0; i < 40; i++ {
+		fmt.Fprintf(&imports, "import m%d from './missing%d'\n", i, i)
+	}
+	n := 4000
+	if raceEnabled {
+		n = 200
+	}
+	for i := 0; i < n; i++ {
+		fsys[fmt.Sprintf("src/d%d/f%d.js", i%50, i)] = &fstest.MapFile{Data: []byte(imports.String())}
+	}
+	if _, d := timedRun(t, NewJS(), fsys); d > time.Second && !raceEnabled {
+		t.Errorf("4000 files x 40 relative imports took %v", d)
 	}
 }

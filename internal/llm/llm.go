@@ -31,18 +31,35 @@ const (
 	DefaultOpenAIURL = "http://localhost:1234" // LM Studio
 )
 
+// maxResponseBytes bounds a successful response body.
+const maxResponseBytes = 4 << 20
+
 var thinkBlock = regexp.MustCompile(`(?s)<think>.*?</think>`)
 
-// clean strips reasoning blocks emitted by "thinking" models.
+// clean strips reasoning blocks emitted by "thinking" models, including an
+// unclosed one left by truncated output.
 func clean(s string) string {
-	return strings.TrimSpace(thinkBlock.ReplaceAllString(s, ""))
+	s = thinkBlock.ReplaceAllString(s, "")
+	if i := strings.Index(s, "<think>"); i >= 0 {
+		s = s[:i]
+	}
+	return strings.TrimSpace(s)
 }
 
+// noRedirects stops a client from following redirects, which would re-send
+// the prompt (repository code) to wherever the server points; the 3xx is
+// then reported as an error.
+func noRedirects(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+
+// defaultHTTP returns a copy of c (or a default client) that never follows
+// redirects.
 func defaultHTTP(c *http.Client) *http.Client {
-	if c != nil {
-		return c
+	if c == nil {
+		return &http.Client{Timeout: 3 * time.Minute, CheckRedirect: noRedirects}
 	}
-	return &http.Client{Timeout: 3 * time.Minute}
+	cp := *c
+	cp.CheckRedirect = noRedirects
+	return &cp
 }
 
 // postJSON sends body as JSON and decodes the JSON response into out.
@@ -88,7 +105,15 @@ func do(hc *http.Client, req *http.Request, out any) error {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return &statusError{req.Method, req.URL.Path, resp.StatusCode, firstLine(strings.TrimSpace(string(msg)))}
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	// Bound the body: a misbehaving server must not exhaust memory.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	if err != nil {
+		return err
+	}
+	if len(body) > maxResponseBytes {
+		return fmt.Errorf("%s %s: response too large (over %d bytes)", req.Method, req.URL.Path, maxResponseBytes)
+	}
+	return json.Unmarshal(body, out)
 }
 
 // defaultRetryDelay is the pause before retrying a 5xx (e.g. a model that
@@ -251,7 +276,7 @@ func Detect(ctx context.Context, cfg Config) (Client, error) {
 	if cfg.OpenAIURL == "" {
 		cfg.OpenAIURL = DefaultOpenAIURL
 	}
-	probe := &http.Client{Timeout: 2 * time.Second}
+	probe := &http.Client{Timeout: 2 * time.Second, CheckRedirect: noRedirects}
 	type candidate struct {
 		list  func(context.Context) ([]string, error)
 		build func(model string) Client

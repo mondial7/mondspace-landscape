@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/mondial7/mondspace-landscape/internal/graph"
 	"github.com/mondial7/mondspace-landscape/internal/landscape"
@@ -203,18 +205,37 @@ func Apply(g *graph.Graph, r Results, source string) {
 	}
 }
 
-// tidy keeps the first paragraph of a model answer, unquoted and bounded.
+// tidy keeps the first paragraph of a model answer, unquoted, stripped of
+// control and bidi characters, and bounded to maxDescChars runes.
 func tidy(s string) string {
 	s = strings.TrimSpace(s)
 	if i := strings.Index(s, "\n\n"); i >= 0 {
 		s = s[:i]
 	}
+	s = strings.Map(printable, s)
 	s = strings.Join(strings.Fields(s), " ")
 	s = strings.Trim(s, "\"'`")
-	if len(s) > maxDescChars {
-		s = s[:maxDescChars-1] + "…"
+	if utf8.RuneCountInString(s) > maxDescChars {
+		r := []rune(s)
+		s = string(r[:maxDescChars-1]) + "…"
 	}
 	return s
+}
+
+// printable drops control characters (whitespace ones become spaces) and
+// the bidi controls that can make displayed or copied text read differently
+// from what it is.
+func printable(r rune) rune {
+	switch {
+	case unicode.IsSpace(r):
+		return ' '
+	case unicode.Is(unicode.Cc, r),
+		r >= '\u202a' && r <= '\u202e', // embeddings and overrides
+		r >= '\u2066' && r <= '\u2069', // isolates
+		r == '\u200e', r == '\u200f':   // directional marks
+		return -1
+	}
+	return r
 }
 
 func hasTag(n graph.Node, tag string) bool {

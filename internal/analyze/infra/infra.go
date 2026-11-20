@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/mondial7/mondspace-landscape/internal/analyze"
 	"github.com/mondial7/mondspace-landscape/internal/scan"

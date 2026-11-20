@@ -6,7 +6,31 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+- A repository can no longer read files outside itself. A `README.md` or `.gitignore` symlinked
+  to e.g. `~/.ssh/id_rsa` or `/dev/zero` used to be read, shown in the diagram and sent to the
+  model; repositories are now opened with `os.OpenRoot`, only regular files up to 1 MiB are read,
+  and clones check symlinks out as plain files.
+- git runs hardened: inherited `GIT_*` variables are dropped, hooks, fsmonitor, submodules and
+  LFS downloads are off, git never looks above the cache directory, and an interrupted clone is
+  cloned again instead of updated.
+- The local server refuses cross-origin writes (`Origin` / `Sec-Fetch-Site`) and sends a strict
+  Content-Security-Policy, `X-Frame-Options: DENY` and cross-origin isolation headers. At most
+  3 analyses run at once and 50 are kept; the HTTP server has read and idle timeouts.
+- Paths under your home directory are shown as `~/...`, so screenshots do not reveal it.
+- The model client caps response size, does not follow redirects (which would re-send code),
+  and descriptions are stripped of control and bidi characters. Prompts mark repository content
+  as untrusted data.
+- Crafted JavaScript files and huge `.gitignore` files can no longer make analysis take hours.
+- Built with Go 1.26.11 (GO-2026-6859 in `net/http`). YAML parsing moved from the archived
+  `gopkg.in/yaml.v3` to the maintained `go.yaml.in/yaml/v3`.
+- Releases: GitHub Actions pinned to commit SHAs (kept current by Dependabot), least-privilege
+  permissions, pinned goreleaser and govulncheck, and signed build provenance for every archive
+  (`gh attestation verify <archive> --repo mondial7/mondspace-landscape`).
+
 ### Changed
+- UI: a dark theme sharing its palette with the Jobs Cockpit (teal accent, warm/hot/blue
+  highlights); README and site screenshots regenerated, and the GitHub Pages site restyled.
 - UI: the six kinds of box are clearly distinct (own colour and shape each: violet person pills,
   navy system, blue containers, teal components, document-shaped files, dashed grey externals).
   The legend shows them as zoom levels (System › Container › Component › File) plus what is

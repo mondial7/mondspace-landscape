@@ -22,6 +22,7 @@ import (
 	"github.com/mondial7/mondspace-landscape/internal/enrich"
 	"github.com/mondial7/mondspace-landscape/internal/graph"
 	"github.com/mondial7/mondspace-landscape/internal/landscape"
+	"github.com/mondial7/mondspace-landscape/internal/scan"
 	"github.com/mondial7/mondspace-landscape/internal/source"
 	"github.com/mondial7/mondspace-landscape/internal/web"
 )
@@ -46,11 +47,15 @@ type Enricher interface {
 type Config struct {
 	Resolver Resolver
 	Analyzer Analyzer
-	Enricher Enricher           // optional
-	OpenFS   func(string) fs.FS // defaults to os.DirFS
-	Initial  string             // optional source analysed at startup
-	Timeout  time.Duration      // per analysis; default 15 minutes
+	Enricher Enricher                            // optional
+	OpenFS   func(string) (fs.FS, func(), error) // defaults to scan.OpenDir
+	Initial  string                              // optional source analysed at startup
+	Timeout  time.Duration                       // per analysis; default 15 minutes
 	Logger   *slog.Logger
+	// MaxRunning caps analyses in progress at once (default 3); more are refused.
+	MaxRunning int
+	// MaxJobs caps analyses kept in memory (default 50); the oldest finished go first.
+	MaxJobs int
 }
 
 // Status is the lifecycle state of an analysis.
@@ -111,13 +116,19 @@ type Server struct {
 // New returns a server; if cfg.Initial is set its analysis starts immediately.
 func New(cfg Config) *Server {
 	if cfg.OpenFS == nil {
-		cfg.OpenFS = os.DirFS
+		cfg.OpenFS = scan.OpenDir
 	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 15 * time.Minute
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
+	}
+	if cfg.MaxRunning <= 0 {
+		cfg.MaxRunning = 3
+	}
+	if cfg.MaxJobs <= 0 {
+		cfg.MaxJobs = 50
 	}
 	s := &Server{cfg: cfg, jobs: map[string]*job{}}
 	if cfg.Initial != "" {
@@ -136,10 +147,40 @@ func (s *Server) Start(src string) Job {
 	s.mu.Lock()
 	s.jobs[j.info.ID] = j
 	s.order = append(s.order, j.info.ID)
+	s.evictLocked()
 	s.mu.Unlock()
 	go s.run(j)
 	return j.snapshot()
 }
+
+// evictLocked drops the oldest finished analyses beyond MaxJobs, so a long
+// running server does not keep every model in memory. Callers hold s.mu.
+func (s *Server) evictLocked() {
+	for i := 0; len(s.order) > s.cfg.MaxJobs && i < len(s.order); {
+		id := s.order[i]
+		if !s.jobs[id].snapshot().done() {
+			i++
+			continue
+		}
+		delete(s.jobs, id)
+		s.order = append(s.order[:i], s.order[i+1:]...)
+	}
+}
+
+// running counts analyses still in progress.
+func (s *Server) running() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	n := 0
+	for _, j := range s.jobs {
+		if !j.snapshot().done() {
+			n++
+		}
+	}
+	return n
+}
+
+func (j Job) done() bool { return j.Status == StatusReady || j.Status == StatusFailed }
 
 func (s *Server) run(j *job) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
@@ -157,7 +198,12 @@ func (s *Server) run(j *job) {
 		return
 	}
 	j.update(func(i *Job) { i.Status, i.Remote, i.Dir = StatusAnalyzing, repo.Remote, source.Display(repo.Dir) })
-	fsys := s.cfg.OpenFS(repo.Dir)
+	fsys, closeFS, err := s.cfg.OpenFS(repo.Dir)
+	if err != nil {
+		fail(err)
+		return
+	}
+	defer closeFS()
 	m, err := s.cfg.Analyzer.Run(ctx, fsys, repo.Name)
 	if err != nil {
 		fail(err)
@@ -245,6 +291,10 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "source is required (a GitHub URL or a local path)")
 		return
 	}
+	if s.running() >= s.cfg.MaxRunning {
+		writeError(w, http.StatusTooManyRequests, "too many analyses in progress; wait for one to finish")
+		return
+	}
 	writeJSON(w, http.StatusAccepted, s.Start(src))
 }
 
@@ -296,8 +346,14 @@ func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// contentSecurityPolicy allows only the app's own scripts, styles and API.
+// The UI never builds HTML from data, so no inline code is needed.
+const contentSecurityPolicy = "default-src 'none'; script-src 'self'; style-src 'self'; " +
+	"img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+
 // localOnly rejects requests whose Host is not a loopback name, defeating
-// DNS-rebinding attacks against this local server.
+// DNS-rebinding attacks against this local server, refuses state-changing
+// requests from other origins (CSRF) and sets the security headers.
 func localOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host := r.Host
@@ -310,15 +366,37 @@ func localOnly(next http.Handler) http.Handler {
 			writeError(w, http.StatusForbidden, "forbidden host")
 			return
 		}
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Referrer-Policy", "no-referrer")
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && !sameOrigin(r) {
+			writeError(w, http.StatusForbidden, "cross-origin request refused")
+			return
+		}
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Content-Security-Policy", contentSecurityPolicy)
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		h.Set("Cross-Origin-Resource-Policy", "same-origin")
 		next.ServeHTTP(w, r)
 	})
 }
 
+// sameOrigin reports whether a browser request comes from this server's own
+// pages. Requests without these headers (curl, the CLI) are not from a
+// browser page and are allowed; the Host check above already applies.
+func sameOrigin(r *http.Request) bool {
+	if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
+		return false
+	}
+	if o := r.Header.Get("Origin"); o != "" && o != "http://"+r.Host {
+		return false
+	}
+	return true
+}
+
 type fsSource struct{ fsys fs.FS }
 
-func (s fsSource) Read(p string) ([]byte, error) { return fs.ReadFile(s.fsys, p) }
+func (s fsSource) Read(p string) ([]byte, error) { return scan.ReadFile(s.fsys, p) }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")

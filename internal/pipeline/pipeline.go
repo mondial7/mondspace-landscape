@@ -92,8 +92,8 @@ func readme(fsys fs.FS) string {
 	}
 	for _, e := range entries {
 		n := strings.ToLower(e.Name())
-		if !e.IsDir() && (n == "readme.md" || n == "readme" || n == "readme.txt") {
-			b, err := fs.ReadFile(fsys, e.Name())
+		if e.Type().IsRegular() && (n == "readme.md" || n == "readme" || n == "readme.txt") {
+			b, err := scan.ReadFile(fsys, e.Name())
 			if err == nil {
 				return string(b)
 			}

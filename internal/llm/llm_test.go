@@ -3,9 +3,12 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -159,5 +162,80 @@ func TestCompleteRetriesTransientServerErrors(t *testing.T) {
 	got, err := c.Complete(context.Background(), "x")
 	if err != nil || got != "ok" || calls != 2 {
 		t.Errorf("Complete = %q, %v after %d calls; want ok after one retry", got, err, calls)
+	}
+}
+
+func TestCleanStripsThinkBlocks(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"<think>hmm</think>\n Answer.", "Answer."},
+		{"<think>a</think>One.<think>b</think> Two.", "One. Two."},
+		{"Answer. <think>truncated reasoning that never closes", "Answer."},
+		{"<think>only reasoning, cut off", ""},
+		{"<think>a</think>Kept. <think>cut", "Kept."},
+	}
+	for _, tt := range tests {
+		if got := clean(tt.in); got != tt.want {
+			t.Errorf("clean(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestCompleteRejectsOversizedResponses(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"response":"`)
+		chunk := strings.Repeat("a", 64<<10)
+		for i := 0; i < (maxResponseBytes/len(chunk))+2; i++ {
+			if _, err := io.WriteString(w, chunk); err != nil {
+				return
+			}
+		}
+		_, _ = io.WriteString(w, `"}`)
+	}))
+	defer srv.Close()
+	got, err := NewOllama(srv.URL, "m", nil).Complete(context.Background(), "x")
+	if err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Errorf("Complete = %d bytes, %v; want a too-large error", len(got), err)
+	}
+}
+
+// redirectPair returns a server that redirects every request with code to
+// a target server, and a func reporting whether the target was reached.
+func redirectPair(t *testing.T, code int) (string, func() bool) {
+	t.Helper()
+	var hit atomic.Bool
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit.Store(true)
+		_ = json.NewEncoder(w).Encode(map[string]any{"response": "leaked", "models": []map[string]string{{"name": "qwen3"}}})
+	}))
+	t.Cleanup(target.Close)
+	src := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+r.URL.Path, code)
+	}))
+	t.Cleanup(src.Close)
+	return src.URL, hit.Load
+}
+
+func TestCompleteDoesNotFollowRedirects(t *testing.T) {
+	for _, code := range []int{http.StatusFound, http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+		url, hit := redirectPair(t, code)
+		for _, c := range []Client{NewOllama(url, "m", nil), NewOpenAI(url, "m", nil), NewOllama(url, "m", &http.Client{})} {
+			_, err := c.Complete(context.Background(), "secret repo code")
+			if err == nil || !strings.Contains(err.Error(), strconv.Itoa(code)) {
+				t.Errorf("%s %d: err = %v, want a %d error", c.Name(), code, err, code)
+			}
+		}
+		if hit() {
+			t.Errorf("%d: prompt was re-sent to the redirect target", code)
+		}
+	}
+}
+
+func TestDetectDoesNotFollowRedirects(t *testing.T) {
+	url, hit := redirectPair(t, http.StatusTemporaryRedirect)
+	if c, err := Detect(context.Background(), Config{Provider: "ollama", OllamaURL: url}); err == nil {
+		t.Errorf("Detect = %s/%s, want error for a redirecting server", c.Name(), c.Model())
+	}
+	if hit() {
+		t.Error("probe followed the redirect")
 	}
 }

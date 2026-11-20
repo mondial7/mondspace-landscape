@@ -5,8 +5,11 @@ package scan
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
+	"os"
 	"path"
 	"sort"
 	"strings"
@@ -30,9 +33,54 @@ type Repo struct {
 
 // Limits protecting the scanner from huge repositories.
 const (
-	MaxFileSize = 1 << 20 // bytes
-	MaxFiles    = 20000
+	MaxFileSize       = 1 << 20 // bytes
+	MaxFiles          = 20000
+	MaxEntries        = 500000 // directory entries walked, recognised or not
+	MaxIgnorePatterns = 5000
 )
+
+// OpenDir opens a repository directory for analysis. Repositories may be
+// hostile, so the file system is an os.Root: symlinks that lead outside the
+// directory (to ~/.ssh, /dev/zero, ...) fail to open instead of being
+// followed. Call the returned func when done.
+func OpenDir(dir string) (fs.FS, func(), error) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	return root.FS(), func() { _ = root.Close() }, nil
+}
+
+// ReadFile reads a regular file of at most MaxFileSize bytes. Everything
+// that reads repository content goes through it, so a device file, FIFO or
+// huge file can neither hang nor exhaust memory.
+func ReadFile(fsys fs.FS, name string) ([]byte, error) {
+	f, err := fsys.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s: not a regular file", name)
+	}
+	if info.Size() > MaxFileSize {
+		return nil, fmt.Errorf("%s: %w", name, errTooLarge)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, MaxFileSize+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > MaxFileSize {
+		return nil, fmt.Errorf("%s: %w", name, errTooLarge)
+	}
+	return data, nil
+}
+
+var errTooLarge = errors.New("file too large")
 
 // skipDirs are never descended into.
 var skipDirs = map[string]bool{
@@ -97,12 +145,16 @@ func IsTest(p string) bool {
 func Scan(fsys fs.FS, name string) (*Repo, error) {
 	ign := loadGitignore(fsys)
 	repo := &Repo{Name: name, FS: fsys, index: map[string]int{}}
+	entries := 0
 	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if p == "." {
 			return nil
+		}
+		if entries++; entries > MaxEntries {
+			return fs.SkipAll
 		}
 		if d.IsDir() {
 			if skipDirs[d.Name()] || ign.match(p, true) || isNestedRepo(fsys, p) {
@@ -124,9 +176,9 @@ func Scan(fsys fs.FS, name string) (*Repo, error) {
 		if len(repo.Files) >= MaxFiles {
 			return fs.SkipAll
 		}
-		data, err := fs.ReadFile(fsys, p)
+		data, err := ReadFile(fsys, p)
 		if err != nil {
-			return fmt.Errorf("read %s: %w", p, err)
+			return nil // vanished, grew or turned into something else since the walk
 		}
 		repo.Files = append(repo.Files, File{Path: p, Language: lang, Lines: countLines(data), Test: IsTest(p)})
 		return nil
@@ -157,9 +209,9 @@ func (r *Repo) File(p string) (File, bool) {
 	return r.Files[i], true
 }
 
-// Read returns the content of a file in the repository.
+// Read returns the content of a file in the repository (see ReadFile).
 func (r *Repo) Read(p string) ([]byte, error) {
-	return fs.ReadFile(r.FS, p)
+	return ReadFile(r.FS, p)
 }
 
 // Languages counts files per language.
@@ -205,12 +257,12 @@ type ignorePattern struct {
 
 func loadGitignore(fsys fs.FS) gitignore {
 	var g gitignore
-	data, err := fs.ReadFile(fsys, ".gitignore")
+	data, err := ReadFile(fsys, ".gitignore")
 	if err != nil {
 		return g
 	}
 	sc := bufio.NewScanner(bytes.NewReader(data))
-	for sc.Scan() {
+	for sc.Scan() && len(g.patterns) < MaxIgnorePatterns {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "!") {
 			continue

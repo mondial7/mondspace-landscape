@@ -135,11 +135,16 @@ func (r *Resolver) github(ctx context.Context, gh GitHub) (Repo, error) {
 	defer r.mu.Unlock()
 	dir := filepath.Join(r.cacheDir, "github.com", gh.Owner, gh.Repo)
 	repo := Repo{Dir: dir, Name: gh.Repo, Remote: gh.WebURL()}
-	if _, err := os.Stat(dir); err == nil {
+	if fi, err := os.Stat(filepath.Join(dir, ".git")); err == nil && fi.IsDir() {
 		if err := r.git.Update(ctx, dir); err != nil {
 			return Repo{}, fmt.Errorf("update %s: %w", gh.WebURL(), err)
 		}
 		return repo, nil
+	}
+	// Missing, or left half-cloned by an interrupted run: start over. Running
+	// git in a directory without .git would act on a repository above it.
+	if err := os.RemoveAll(dir); err != nil {
+		return Repo{}, err
 	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return Repo{}, err
@@ -156,26 +161,59 @@ type GitCLI struct{}
 
 // Clone makes a shallow clone of url into dir.
 func (GitCLI) Clone(ctx context.Context, url, dir string) error {
-	return git(ctx, "", "clone", "--depth", "1", "--single-branch", "--no-tags", "--", url, dir)
+	return git(ctx, "", filepath.Dir(dir), "clone", "--depth", "1", "--single-branch", "--no-tags", "--no-recurse-submodules", "--", url, dir)
 }
 
 // Update fetches the latest commit of the cloned branch and checks it out.
 func (GitCLI) Update(ctx context.Context, dir string) error {
-	if err := git(ctx, dir, "fetch", "--depth", "1", "--no-tags", "origin"); err != nil {
+	if err := git(ctx, dir, filepath.Dir(dir), "fetch", "--depth", "1", "--no-tags", "--no-recurse-submodules", "origin"); err != nil {
 		return err
 	}
-	return git(ctx, dir, "reset", "--hard", "-q", "FETCH_HEAD")
+	return git(ctx, dir, filepath.Dir(dir), "reset", "--hard", "-q", "--no-recurse-submodules", "FETCH_HEAD")
 }
 
-func git(ctx context.Context, dir string, args ...string) error {
-	cmd := exec.CommandContext(ctx, "git", args...)
+// safeConfig is passed to every git command. The repositories are untrusted
+// and only read, so nothing in them may run or reach outside the clone:
+// no hooks, no fsmonitor, no submodules, and symlinks are checked out as
+// plain files (a symlink to ~/.ssh/id_rsa becomes a small text file).
+var safeConfig = []string{
+	"-c", "core.hooksPath=" + os.DevNull,
+	"-c", "core.fsmonitor=false",
+	"-c", "core.symlinks=false",
+	"-c", "submodule.recurse=false",
+	"-c", "protocol.ext.allow=never",
+}
+
+// git runs git in dir ("" for the current directory); ceiling is the
+// directory above which git must never look for a repository.
+func git(ctx context.Context, dir, ceiling string, args ...string) error {
+	cmd := exec.CommandContext(ctx, "git", append(append([]string{}, safeConfig...), args...)...)
 	cmd.Dir = dir
-	// Never prompt for credentials: private repositories fail fast instead of hanging.
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=true")
+	cmd.Env = gitEnv(os.Environ(), ceiling)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(lastLine(string(out))))
 	}
 	return nil
+}
+
+// gitEnv returns environ without inherited GIT_* variables (GIT_DIR,
+// GIT_CONFIG_PARAMETERS, ... set by a hook or an IDE would redirect the
+// commands to another repository) plus the settings git must run with.
+func gitEnv(environ []string, ceiling string) []string {
+	env := make([]string, 0, len(environ)+6)
+	for _, kv := range environ {
+		if !strings.HasPrefix(kv, "GIT_") {
+			env = append(env, kv)
+		}
+	}
+	return append(env,
+		"GIT_TERMINAL_PROMPT=0", // private repositories fail fast instead of prompting
+		"GIT_ASKPASS=true",
+		"GIT_LFS_SKIP_SMUDGE=1", // do not download LFS objects the repository points at
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_NO_REPLACE_OBJECTS=1",
+		"GIT_CEILING_DIRECTORIES="+ceiling,
+	)
 }
 
 func lastLine(s string) string {

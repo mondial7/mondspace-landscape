@@ -1,6 +1,7 @@
 package script
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -32,6 +33,10 @@ var (
 	jsUI     = regexp.MustCompile(`\bdocument\.|\bwindow\.|\bnavigator\.|self\.addEventListener\(`)
 )
 
+// fetchArgsWindow bounds how far past fetch('/path' the options object is
+// looked for.
+const fetchArgsWindow = 512
+
 var uiLibs = map[string]bool{"react": true, "react-dom": true, "vue": true, "svelte": true, "preact": true, "solid-js": true, "@angular/core": true, "lit": true}
 
 // Analyze implements analyze.Analyzer.
@@ -42,6 +47,7 @@ func (JS) Analyze(ctx context.Context, repo *scan.Repo) (analyze.Facts, error) {
 		return facts, nil
 	}
 	roots, mains := packageRoots(repo)
+	stems := fileStems(repo)
 	us := newUnits("js", "javascript")
 	for _, f := range files {
 		if f.Language == "typescript" {
@@ -66,10 +72,15 @@ func (JS) Analyze(ctx context.Context, repo *scan.Repo) (analyze.Facts, error) {
 		if err != nil {
 			return facts, fmt.Errorf("read %s: %w", f.Path, err)
 		}
+		seen := map[string]bool{}
 		for _, m := range jsImport.FindAllSubmatch(src, -1) {
 			imp := string(m[1])
+			if seen[imp] {
+				continue
+			}
+			seen[imp] = true
 			if strings.HasPrefix(imp, ".") {
-				if dir, ok := resolveRelative(repo, us, f.Path, imp); ok {
+				if dir, ok := resolveRelative(stems, us, f.Path, imp); ok {
 					b.dep(us.id(dir), f.Path, f.Test)
 				}
 				continue
@@ -104,13 +115,14 @@ func (JS) Analyze(ctx context.Context, repo *scan.Repo) (analyze.Facts, error) {
 		}
 		for _, loc := range jsFetch.FindAllSubmatchIndex(src, -1) {
 			p := string(src[loc[4]:loc[5]])
-			// Look for an options object only inside this call's arguments.
-			end := len(src)
-			if i := strings.IndexByte(string(src[loc[1]:]), ')'); i >= 0 {
-				end = loc[1] + i
+			// Look for an options object only inside this call's arguments,
+			// within a bounded window so unclosed calls stay linear.
+			args := src[loc[1]:min(len(src), loc[1]+fetchArgsWindow)]
+			if i := bytes.IndexByte(args, ')'); i >= 0 {
+				args = args[:i]
 			}
 			method := ""
-			if mm := jsMethod.FindSubmatch(src[loc[1]:end]); mm != nil {
+			if mm := jsMethod.FindSubmatch(args); mm != nil {
 				method = strings.ToUpper(string(mm[1]))
 			}
 			facts.Calls = append(facts.Calls, analyze.Call{File: f.Path, Method: method, Path: p})
@@ -174,17 +186,31 @@ func nearestRoot(roots []string, file string) string {
 	return best
 }
 
+// fileStems indexes every repository file by each extension-less form of
+// its path: "a/b.test.js" yields "a/b" and "a/b.test". A relative import
+// lands on a file when its target is one of these stems.
+func fileStems(repo *scan.Repo) map[string]bool {
+	stems := map[string]bool{}
+	for _, f := range repo.Files {
+		dir, base := path.Dir(f.Path), path.Base(f.Path)
+		for i := 0; i < len(base); i++ {
+			if base[i] == '.' {
+				stems[dir+"/"+base[:i]] = true
+			}
+		}
+	}
+	return stems
+}
+
 // resolveRelative maps a relative import to the directory unit it lands in.
-func resolveRelative(repo *scan.Repo, us *units, from, imp string) (string, bool) {
+func resolveRelative(stems map[string]bool, us *units, from, imp string) (string, bool) {
 	target := path.Join(path.Dir(from), imp)
 	if us.has(target) {
 		return target, true // directory import (index file)
 	}
 	dir := path.Dir(target)
-	for _, f := range repo.Files {
-		if strings.HasPrefix(f.Path, target+".") && path.Dir(f.Path) == dir {
-			return dir, us.has(dir)
-		}
+	if stems[dir+"/"+path.Base(target)] {
+		return dir, us.has(dir)
 	}
 	return "", false
 }

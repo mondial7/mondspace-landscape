@@ -30,6 +30,7 @@ import (
 	"github.com/mondial7/mondspace-landscape/internal/enrich"
 	"github.com/mondial7/mondspace-landscape/internal/llm"
 	"github.com/mondial7/mondspace-landscape/internal/pipeline"
+	"github.com/mondial7/mondspace-landscape/internal/scan"
 	"github.com/mondial7/mondspace-landscape/internal/server"
 	"github.com/mondial7/mondspace-landscape/internal/source"
 )
@@ -156,7 +157,13 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 	fmt.Fprintf(stdout, "landscape: %s\n", url)
 
-	httpSrv := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	httpSrv := &http.Server{
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    64 << 10,
+	}
 	errc := make(chan error, 1)
 	go func() { errc <- httpSrv.Serve(ln) }()
 	if !o.noOpen {
@@ -200,7 +207,12 @@ func printJSON(ctx context.Context, o options, r *source.Resolver, e *enrich.Enr
 	if e != nil {
 		opts = append(opts, pipeline.WithEnricher(e))
 	}
-	m, err := pipeline.New(opts...).Run(ctx, os.DirFS(repo.Dir), repo.Name)
+	fsys, closeFS, err := scan.OpenDir(repo.Dir)
+	if err != nil {
+		return err
+	}
+	defer closeFS()
+	m, err := pipeline.New(opts...).Run(ctx, fsys, repo.Name)
 	if err != nil {
 		return err
 	}
@@ -245,7 +257,12 @@ func openBrowser(url string) error {
 func defaultCache() string {
 	dir, err := os.UserCacheDir()
 	if err != nil {
-		dir = os.TempDir()
+		// Not a shared temp directory: another user could plant a "clone" there.
+		home, herr := os.UserHomeDir()
+		if herr != nil {
+			return filepath.Join(".", ".landscape-cache")
+		}
+		dir = filepath.Join(home, ".cache")
 	}
 	return filepath.Join(dir, "mondspace-landscape", "repos")
 }

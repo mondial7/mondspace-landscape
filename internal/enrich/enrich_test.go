@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/mondial7/mondspace-landscape/internal/analyze"
 	"github.com/mondial7/mondspace-landscape/internal/graph"
@@ -168,5 +169,40 @@ func TestEnrichKeepsGoingWhenSomeCallsFail(t *testing.T) {
 	}
 	if got := desc(t, m, "cmp:store").Description; got != "Package store persists things." {
 		t.Errorf("failed node should keep its static description, got %q", got)
+	}
+}
+
+func TestTidyTruncatesOnRuneBoundary(t *testing.T) {
+	in := strings.Repeat("é", maxDescChars+10) // 2 bytes per rune
+	got := tidy(in)
+	if !utf8.ValidString(got) {
+		t.Fatalf("tidy produced invalid UTF-8: %q", got)
+	}
+	if n := utf8.RuneCountInString(got); n != maxDescChars {
+		t.Errorf("tidy = %d runes, want %d", n, maxDescChars)
+	}
+	if !strings.HasSuffix(got, "é…") {
+		t.Errorf("tidy = %q, want ellipsis after a whole rune", got)
+	}
+	if short := "Stores sessions."; tidy(short) != short {
+		t.Errorf("tidy(%q) = %q, want unchanged", short, tidy(short))
+	}
+}
+
+func TestTidyStripsControlAndBidiCharacters(t *testing.T) {
+	in := "Stores\x00 ses\x1bsions‮ evil‬⁦x⁩‎‏\x7f and\ttabs\rok."
+	want := "Stores sessions evilx and tabs ok."
+	if got := tidy(in); got != want {
+		t.Errorf("tidy = %q, want %q", got, want)
+	}
+}
+
+func TestTruncateUTF8KeepsWholeCharacters(t *testing.T) {
+	s := "aé€😀"
+	for n := 0; n <= len(s)+1; n++ {
+		got := truncateUTF8(s, n)
+		if len(got) > n || !utf8.ValidString(got) || !strings.HasPrefix(s, got) {
+			t.Errorf("truncateUTF8(%q, %d) = %q", s, n, got)
+		}
 	}
 }

@@ -61,7 +61,7 @@ func newTestServer(t *testing.T, opts ...func(*Config)) http.Handler {
 	cfg := Config{
 		Resolver: fakeResolver{},
 		Analyzer: fakeAnalyzer{},
-		OpenFS:   func(string) fs.FS { return fstest.MapFS{} },
+		OpenFS:   func(string) (fs.FS, func(), error) { return fstest.MapFS{}, func() {}, nil },
 	}
 	for _, o := range opts {
 		o(&cfg)
@@ -267,5 +267,79 @@ func TestJobsDoNotRevealHomeDirectory(t *testing.T) {
 	}
 	if body := do(t, h, "GET", "/api/analyses", "").Body.String(); strings.Contains(body, home) {
 		t.Errorf("job list reveals the home directory: %s", body)
+	}
+}
+
+func TestRejectsCrossOriginWrites(t *testing.T) {
+	h := newTestServer(t)
+	post := func(set func(*http.Request)) int {
+		req := httptest.NewRequest("POST", "/api/analyses", strings.NewReader(`{"source":"demo"}`))
+		req.Host = "localhost:7777"
+		req.Header.Set("Content-Type", "application/json")
+		set(req)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := post(func(r *http.Request) { r.Header.Set("Origin", "https://evil.example") }); code != http.StatusForbidden {
+		t.Errorf("foreign Origin: status %d, want 403", code)
+	}
+	if code := post(func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "cross-site") }); code != http.StatusForbidden {
+		t.Errorf("cross-site fetch: status %d, want 403", code)
+	}
+	if code := post(func(r *http.Request) {
+		r.Header.Set("Origin", "http://localhost:7777")
+		r.Header.Set("Sec-Fetch-Site", "same-origin")
+	}); code != http.StatusAccepted {
+		t.Errorf("same-origin POST: status %d, want 202", code)
+	}
+}
+
+func TestSecurityHeaders(t *testing.T) {
+	h := newTestServer(t)
+	for _, url := range []string{"/", "/api/analyses"} {
+		rec := do(t, h, "GET", url, "")
+		hd := rec.Header()
+		if csp := hd.Get("Content-Security-Policy"); !strings.Contains(csp, "default-src 'none'") || !strings.Contains(csp, "frame-ancestors 'none'") || strings.Contains(csp, "unsafe") {
+			t.Errorf("%s: CSP = %q", url, csp)
+		}
+		for k, want := range map[string]string{
+			"X-Frame-Options":              "DENY",
+			"X-Content-Type-Options":       "nosniff",
+			"Cross-Origin-Opener-Policy":   "same-origin",
+			"Cross-Origin-Resource-Policy": "same-origin",
+		} {
+			if got := hd.Get(k); got != want {
+				t.Errorf("%s: %s = %q, want %q", url, k, got, want)
+			}
+		}
+	}
+}
+
+func TestLimitsRunningAndRetainedJobs(t *testing.T) {
+	block := make(chan struct{})
+	defer close(block)
+	h := newTestServer(t, func(c *Config) { c.Resolver = blockingResolver{block}; c.MaxRunning = 2 })
+	for i := 0; i < 2; i++ {
+		if rec := do(t, h, "POST", "/api/analyses", `{"source":"demo"}`); rec.Code != http.StatusAccepted {
+			t.Fatalf("job %d: status %d", i, rec.Code)
+		}
+	}
+	if rec := do(t, h, "POST", "/api/analyses", `{"source":"demo"}`); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("third concurrent job: status %d, want 429", rec.Code)
+	}
+
+	h = newTestServer(t, func(c *Config) { c.MaxJobs = 3 })
+	var ids []string
+	for i := 0; i < 5; i++ {
+		j := decode[Job](t, do(t, h, "POST", "/api/analyses", `{"source":"demo"}`))
+		waitFor(t, h, j.ID, StatusReady)
+		ids = append(ids, j.ID)
+	}
+	if list := decode[[]Job](t, do(t, h, "GET", "/api/analyses", "")); len(list) != 3 {
+		t.Errorf("retained %d jobs, want 3", len(list))
+	}
+	if rec := do(t, h, "GET", "/api/analyses/"+ids[0], ""); rec.Code != http.StatusNotFound {
+		t.Errorf("oldest job still retained: status %d", rec.Code)
 	}
 }
